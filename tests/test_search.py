@@ -73,6 +73,43 @@ def test_search_arxiv_unreachable_returns_502(app_settings):
     assert "不可达" in resp.json()["detail"]
 
 
+def test_search_falls_back_to_s2(app_settings):
+    class BrokenArxiv:
+        async def search(self, query, max_results=10, year_from=None, year_to=None):
+            raise httpx.ReadTimeout("arxiv down")
+
+    class FakeS2:
+        async def search(self, query, limit=10):
+            return [PaperItem(title="S2 Result", source="s2", external_id="9")]
+
+    app = create_app(app_settings)
+    app.state.arxiv_service = BrokenArxiv()
+    app.state.s2_service = FakeS2()
+    with TestClient(app) as client:
+        resp = client.post("/api/search", json={"query": "LoRA"})
+    assert resp.status_code == 200
+    assert resp.json()["items"][0]["source"] == "s2"
+
+
+def test_search_uses_cache(app_settings):
+    class CountingArxiv:
+        def __init__(self) -> None:
+            self.calls = 0
+
+        async def search(self, query, max_results=10, year_from=None, year_to=None):
+            self.calls += 1
+            return [PaperItem(title="Cached", source="arxiv", external_id="1")]
+
+    app = create_app(app_settings)
+    app.state.arxiv_service = CountingArxiv()
+    with TestClient(app) as client:
+        first = client.post("/api/search", json={"query": "LoRA", "max_results": 3})
+        second = client.post("/api/search", json={"query": "LoRA", "max_results": 3})
+    assert first.json()["total"] == 1
+    assert second.json()["total"] == 1
+    assert app.state.arxiv_service.calls == 1
+
+
 def test_search_requires_query(app_settings):
     app = create_app(app_settings)
     with TestClient(app) as client:

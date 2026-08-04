@@ -577,14 +577,16 @@ MAX_UPLOAD_MB=50
 
 **目标**：项目能跑，能搜 arXiv 并展示结果。
 
-- [ ] Project Initialization（Poetry / Git / 目录结构）
-- [ ] FastAPI 入口 + 配置管理
-- [ ] SQLAlchemy 模型 + 数据库初始化
-- [ ] LLM 客户端工厂（DeepSeek V4，`scripts/test_llm.py` 验证）
-- [ ] arXiv API 集成（User-Agent、限速 ≥1 次/3s、重试）
-- [ ] `/api/search` 搜索端点
-- [ ] Jinja2 首页 + 搜索结果页
-- [ ] 验证：浏览器输入关键词 → 返回论文列表（开发模式）
+- [x] Project Initialization（Poetry / Git / 目录结构）
+- [x] FastAPI 入口 + 配置管理
+- [x] SQLAlchemy 模型 + 数据库初始化
+- [x] LLM 客户端工厂（DeepSeek V4 / Qwen，`scripts/test_llm.py` 验证）
+- [x] arXiv API 集成（User-Agent、限速 ≥1 次/3s、条件重试）
+- [x] Semantic Scholar 集成（引用量、双源回退）
+- [x] 搜索结果 24h 缓存
+- [x] `/api/search` 搜索端点（JSON / HTMX 双返回，失败降级 502）
+- [x] Jinja2 首页 + 搜索结果页
+- [ ] 验证：配置 API Key 后，浏览器输入关键词 → 返回论文列表（本机待验证）
 
 ### 第二阶段：PDF 处理 + 向量检索（预计 3-5 天）
 

@@ -6,7 +6,7 @@ import xml.etree.ElementTree as ET
 from typing import Any
 
 import httpx
-from tenacity import retry, stop_after_attempt, wait_exponential
+from tenacity import retry, retry_if_exception, stop_after_attempt, wait_exponential
 
 from app.schemas.search import PaperItem
 
@@ -14,6 +14,13 @@ ARXIV_API_URL = "https://export.arxiv.org/api/query"
 ATOM = "{http://www.w3.org/2005/Atom}"
 USER_AGENT = "ScholarMate/0.1 (graduation project)"
 REQUEST_TIMEOUT_SECONDS = 30.0
+
+
+def _is_transient(exc: BaseException) -> bool:
+    return (
+        isinstance(exc, httpx.HTTPStatusError)
+        and exc.response.status_code in (429, 500, 502, 503)
+    )
 
 
 class ArxivService:
@@ -25,6 +32,7 @@ class ArxivService:
         )
 
     @retry(
+        retry=retry_if_exception(_is_transient),
         stop=stop_after_attempt(3),
         wait=wait_exponential(multiplier=1, min=1, max=8),
         reraise=True,

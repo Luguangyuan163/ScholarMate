@@ -1,0 +1,101 @@
+"""LLM 客户端工厂与对话测试（openai 依赖通过注入替身规避）。"""
+
+from __future__ import annotations
+
+from types import SimpleNamespace
+
+import pytest
+
+from app.config import Settings
+from app.core.llm_client import OpenAICompatibleClient, get_llm_client
+
+
+class FakeStreamChunk:
+    def __init__(self, content: str) -> None:
+        self.choices = [SimpleNamespace(delta=SimpleNamespace(content=content))]
+
+
+class FakeStream:
+    def __init__(self, contents: list[str]) -> None:
+        self._contents = contents
+
+    async def __aiter__(self):
+        for content in self._contents:
+            yield FakeStreamChunk(content)
+
+
+class FakeCompletions:
+    def __init__(self, content: str) -> None:
+        self.content = content
+        self.last_kwargs = None
+
+    async def create(self, **kwargs):
+        self.last_kwargs = kwargs
+        if kwargs.get("stream"):
+            return FakeStream(["你", "好"])
+        return SimpleNamespace(
+            choices=[SimpleNamespace(message=SimpleNamespace(content=self.content))]
+        )
+
+
+class FakeClient:
+    def __init__(self, completions: FakeCompletions) -> None:
+        self.chat = SimpleNamespace(completions=completions)
+
+
+async def test_chat_returns_content():
+    completions = FakeCompletions("你好")
+    client = OpenAICompatibleClient(
+        api_key="k",
+        base_url="http://x",
+        model="deepseek-v4-flash",
+        provider="deepseek",
+        _client=FakeClient(completions),
+    )
+    result = await client.chat([{"role": "user", "content": "hi"}])
+    assert result == "你好"
+    assert completions.last_kwargs["model"] == "deepseek-v4-flash"
+
+
+async def test_astream_chat_yields_content():
+    completions = FakeCompletions("")
+    client = OpenAICompatibleClient(
+        api_key="k",
+        base_url="http://x",
+        model="deepseek-v4-flash",
+        provider="deepseek",
+        _client=FakeClient(completions),
+    )
+    chunks = [chunk async for chunk in client.astream_chat([{"role": "user", "content": "hi"}])]
+    assert chunks == ["你", "好"]
+
+
+def test_factory_deepseek():
+    settings = Settings(
+        _env_file=None,
+        llm_provider="deepseek",
+        deepseek_api_key="k",
+        deepseek_model="deepseek-v4-flash",
+    )
+    client = get_llm_client(settings)
+    assert client.provider == "deepseek"
+    assert client.model == "deepseek-v4-flash"
+    assert client.base_url == "https://api.deepseek.com"
+
+
+def test_factory_qwen():
+    settings = Settings(
+        _env_file=None,
+        llm_provider="qwen",
+        dashscope_api_key="k",
+        dashscope_model="qwen-plus",
+    )
+    client = get_llm_client(settings)
+    assert client.provider == "qwen"
+    assert client.base_url == "https://dashscope.aliyuncs.com/compatible-mode/v1"
+
+
+def test_factory_unknown_provider_raises():
+    settings = Settings(_env_file=None, llm_provider="nope")
+    with pytest.raises(ValueError):
+        get_llm_client(settings)

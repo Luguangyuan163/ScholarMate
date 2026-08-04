@@ -11,10 +11,12 @@ from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
+import app.models  # noqa: F401  确保 ORM 模型注册到 Base.metadata
 from app.api import agent, papers, pdf, search
 from app.config import Settings
 from app.core.database import Database
 from app.services.arxiv_service import ArxivService
+from app.services.semantic_scholar_service import SemanticScholarService
 
 BASE_DIR = Path(__file__).resolve().parent
 templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
@@ -33,6 +35,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         app.state.templates = templates
         if not hasattr(app.state, "arxiv_service"):
             app.state.arxiv_service = ArxivService()
+        if not hasattr(app.state, "s2_service"):
+            app.state.s2_service = SemanticScholarService(
+                api_key=settings.semantic_scholar_api_key
+            )
         yield
         await db.close()
 
