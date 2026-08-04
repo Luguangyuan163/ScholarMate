@@ -11,6 +11,6 @@ class PDFUploadResponse(BaseModel):
     status: str
 
 
-class TranslationResponse(BaseModel):
-    pdf_id: int
-    paragraphs: list[dict[str, str]]
+class TranslateRequest(BaseModel):
+    target_lang: str = "zh"
+    max_paragraphs: int = 0  # 0 表示翻译全部段落
