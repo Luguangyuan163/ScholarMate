@@ -15,10 +15,12 @@ import app.models  # noqa: F401  确保 ORM 模型注册到 Base.metadata
 from app.api import agent, papers, pdf, search
 from app.config import Settings
 from app.core.database import Database
+from app.core.llm_client import get_llm_client
 from app.services.arxiv_service import ArxivService
 from app.services.embedding_service import EmbeddingService
 from app.services.pdf_service import PDFService
 from app.services.semantic_scholar_service import SemanticScholarService
+from app.services.translation_service import TranslationService
 from app.services.vector_store_service import VectorStoreService
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -51,6 +53,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         if not hasattr(app.state, "vector_store"):
             app.state.vector_store = VectorStoreService(
                 persist_dir=settings.chroma_persist_dir
+            )
+        if not hasattr(app.state, "llm_client"):
+            app.state.llm_client = get_llm_client(settings)
+        if not hasattr(app.state, "translation_service"):
+            app.state.translation_service = TranslationService(
+                llm=app.state.llm_client
             )
         yield
         await db.close()

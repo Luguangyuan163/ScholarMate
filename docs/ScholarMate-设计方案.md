@@ -607,12 +607,13 @@ MAX_UPLOAD_MB=50
 
 **目标**：Agent 理解自然语言，自主调用工具，综合输出。
 
-- [ ] System Prompt 设计（角色、能力边界、输出格式）
-- [ ] 工具定义（search_arxiv / search_semantic_scholar / search_local / get_paper_detail / translate_text）
-- [ ] ReAct 主循环实现（约 200 行，含 JSON 解析与最大迭代限制）
-- [ ] SSE 流式输出 + 前端 fetch 流式解析
-- [ ] Agent 对话页面（聊天界面 + 打字机效果）
-- [ ] 验证：「找 5 篇 2024 年 LoRA 微调论文并按引用量排序」→ 自动搜索 → 排序 → 输出
+- [x] System Prompt 设计（角色、能力边界、输出要求）
+- [x] 工具定义（search_arxiv / search_semantic_scholar / search_local / get_paper_detail / translate_text）
+- [x] ReAct 主循环实现（含 JSON 解析、最大迭代限制、工具异常回传）
+- [x] SSE 流式输出 + 前端 fetch 流式解析（打字机效果）
+- [x] Agent 对话页面（聊天界面 + 工具调用状态展示）
+- [x] 实测验证：Agent 真实调用 search_local 多轮检索本地论文库并输出结构化总结（DeepSeek 并行工具调用正常）
+- [ ] 「按引用量排序」场景：待申请 Semantic Scholar key 后验证
 
 ### 第四阶段：PDF 翻译 + 界面打磨（预计 3-5 天）
 

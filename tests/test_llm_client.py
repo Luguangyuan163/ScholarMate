@@ -2,12 +2,16 @@
 
 from __future__ import annotations
 
+import json
 from types import SimpleNamespace
 
 import pytest
 
 from app.config import Settings
-from app.core.llm_client import OpenAICompatibleClient, get_llm_client
+from app.core.llm_client import (
+    OpenAICompatibleClient,
+    get_llm_client,
+)
 
 
 class FakeStreamChunk:
@@ -68,6 +72,40 @@ async def test_astream_chat_yields_content():
     )
     chunks = [chunk async for chunk in client.astream_chat([{"role": "user", "content": "hi"}])]
     assert chunks == ["你", "好"]
+
+
+async def test_chat_with_tools_parses_tool_calls():
+    class FakeToolCompletions:
+        async def create(self, **kwargs):
+            self.last_kwargs = kwargs
+            tool_calls = [
+                SimpleNamespace(
+                    id="call-1",
+                    function=SimpleNamespace(
+                        name="add", arguments=json.dumps({"a": 1, "b": 2})
+                    ),
+                )
+            ]
+            message = SimpleNamespace(content=None, tool_calls=tool_calls)
+            return SimpleNamespace(choices=[SimpleNamespace(message=message)])
+
+    fake = FakeToolCompletions()
+    client = OpenAICompatibleClient(
+        api_key="k",
+        base_url="http://x",
+        model="deepseek-v4-flash",
+        provider="deepseek",
+        _client=SimpleNamespace(chat=SimpleNamespace(completions=fake)),
+    )
+    response = await client.chat_with_tools(
+        [{"role": "user", "content": "1+2?"}],
+        tools=[{"type": "function", "function": {"name": "add"}}],
+    )
+    assert response.content == ""
+    assert len(response.tool_calls) == 1
+    assert response.tool_calls[0].name == "add"
+    assert response.tool_calls[0].arguments == {"a": 1, "b": 2}
+    assert fake.last_kwargs["tools"][0]["function"]["name"] == "add"
 
 
 def test_factory_deepseek():

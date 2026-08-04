@@ -55,3 +55,38 @@ button {
 .meta { color: var(--muted); font-size: 13px; margin: 0 0 6px; }
 .abstract { font-size: 14px; line-height: 1.6; margin: 0; }
 .placeholder { text-align: center; color: var(--muted); padding: 48px 0; }
+
+/* Agent 对话 */
+.chat { display: flex; flex-direction: column; height: calc(100vh - 120px); }
+.chat-log {
+  flex: 1;
+  overflow-y: auto;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 16px;
+  margin-bottom: 12px;
+}
+.chat-placeholder { color: var(--muted); text-align: center; line-height: 2; }
+.chat-msg {
+  padding: 10px 14px;
+  border-radius: 8px;
+  margin-bottom: 10px;
+  white-space: pre-wrap;
+  line-height: 1.6;
+  max-width: 86%;
+}
+.chat-msg.user {
+  margin-left: auto;
+  background: var(--accent);
+  color: #fff;
+}
+.chat-msg.assistant { background: var(--bg); border: 1px solid var(--border); }
+.chat-status {
+  color: var(--muted);
+  font-size: 12px;
+  padding: 4px 2px;
+  margin-bottom: 8px;
+}
+.chat-input { display: flex; gap: 8px; }
+.chat-input input { flex: 1; }

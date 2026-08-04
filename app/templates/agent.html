@@ -1,8 +1,23 @@
 {% extends "base.html" %}
 {% block title %}Agent 对话 - {{ app_title }}{% endblock %}
 {% block content %}
-<section class="placeholder">
-  <h2>Agent 对话</h2>
-  <p>ReAct 智能检索 + SSE 流式输出将在 P3 实现。</p>
+<section class="chat" x-data="chatApp()" x-init="init()">
+  <div class="chat-log" id="chat-log" x-ref="log">
+    <p class="chat-placeholder">
+      向 ScholarMate 提问，例如：<br>
+      「找 3 篇 2024 年关于 LoRA 微调的论文，按引用量排序」<br>
+      「检索本地论文库中关于低秩适配的内容」
+    </p>
+  </div>
+  <form class="chat-input" @submit.prevent="send()">
+    <input
+      type="text"
+      x-model="query"
+      placeholder="输入你的问题…"
+      :disabled="busy"
+      autocomplete="off"
+    >
+    <button type="submit" :disabled="busy || !query.trim()">发送</button>
+  </form>
 </section>
 {% endblock %}

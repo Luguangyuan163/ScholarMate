@@ -63,3 +63,30 @@ async def test_search_sends_query_fields_and_key():
     assert client.last_params["limit"] == 5
     assert "citationCount" in client.last_params["fields"]
     assert client.last_headers["x-api-key"] == "test-key"
+
+
+async def test_get_paper_detail_sends_fields():
+    class FakeDetailResponse:
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return {"paperId": "abc", "title": "Detail", "citationCount": 5}
+
+    class FakeDetailClient:
+        def __init__(self) -> None:
+            self.last_params = None
+            self.last_url = None
+
+        async def get(self, url, params=None, headers=None):
+            self.last_url = url
+            self.last_params = params
+            return FakeDetailResponse()
+
+    client = FakeDetailClient()
+    service = SemanticScholarService(client=client, api_key="k")
+    data = await service.get_paper_detail("abc")
+    assert data["title"] == "Detail"
+    assert data["citationCount"] == 5
+    assert "citationCount" in client.last_params["fields"]
+    assert client.last_url.endswith("/paper/abc")

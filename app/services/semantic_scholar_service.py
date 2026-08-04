@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import time
+from urllib.parse import quote
 
 import httpx
 from tenacity import retry, retry_if_exception, stop_after_attempt, wait_exponential
@@ -45,7 +46,14 @@ class SemanticScholarService:
         return _parse_s2_response(response.json())
 
     async def get_paper_detail(self, paper_id: str) -> dict:
-        raise NotImplementedError("Semantic Scholar 论文详情将在 P3 接入")
+        params = {"fields": S2_FIELDS}
+        headers = {"x-api-key": self._api_key} if self._api_key else {}
+        response = await self._get(
+            f"{S2_SEARCH_URL.rsplit('/paper', 1)[0]}/paper/{quote(paper_id, safe='')}",
+            params=params,
+            headers=headers,
+        )
+        return response.json()
 
     @retry(
         retry=retry_if_exception(_is_rate_limited),

@@ -5,6 +5,7 @@ openai 依赖在首次调用时惰性导入，避免骨架阶段强制安装。
 
 from __future__ import annotations
 
+import json
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
 
@@ -12,6 +13,19 @@ from app.config import Settings
 
 DEEPSEEK_BASE_URL = "https://api.deepseek.com"
 DASHSCOPE_BASE_URL = "https://dashscope.aliyuncs.com/compatible-mode/v1"
+
+
+@dataclass
+class ToolCall:
+    id: str
+    name: str
+    arguments: dict
+
+
+@dataclass
+class LLMResponse:
+    content: str
+    tool_calls: list[ToolCall]
 
 
 class BaseLLMClient:
@@ -22,6 +36,11 @@ class BaseLLMClient:
         raise NotImplementedError
 
     async def astream_chat(self, messages: list[dict], **kwargs) -> AsyncIterator[str]:
+        raise NotImplementedError
+
+    async def chat_with_tools(
+        self, messages: list[dict], tools: list[dict], **kwargs
+    ) -> LLMResponse:
         raise NotImplementedError
 
 
@@ -55,6 +74,23 @@ class OpenAICompatibleClient(BaseLLMClient):
             if content:
                 yield content
 
+    async def chat_with_tools(
+        self, messages: list[dict], tools: list[dict], **kwargs
+    ) -> LLMResponse:
+        response = await self._get_client().chat.completions.create(
+            model=self.model, messages=messages, tools=tools, **kwargs
+        )
+        message = response.choices[0].message
+        tool_calls = [
+            ToolCall(
+                id=call.id,
+                name=call.function.name,
+                arguments=_parse_arguments(call.function.arguments),
+            )
+            for call in (message.tool_calls or [])
+        ]
+        return LLMResponse(content=message.content or "", tool_calls=tool_calls)
+
 
 def get_llm_client(settings: Settings) -> BaseLLMClient:
     if settings.llm_provider == "deepseek":
@@ -74,3 +110,10 @@ def get_llm_client(settings: Settings) -> BaseLLMClient:
     if settings.llm_provider == "claude":
         raise NotImplementedError("Claude 客户端暂未接入（可选模型）")
     raise ValueError(f"未知 LLM_PROVIDER: {settings.llm_provider}")
+
+
+def _parse_arguments(raw: str | None) -> dict:
+    try:
+        return json.loads(raw or "{}")
+    except json.JSONDecodeError:
+        return {}
