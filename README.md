@@ -71,3 +71,16 @@ docs/         # 设计方案 / 计划书 / 答辩素材
 | P6 | 测试 + 文档完善 | 计划 |
 
 详细设计见 `docs/ScholarMate-设计方案.md`，项目计划见 `Plan.md`。
+
+## 测试与质量
+
+```bash
+ruff check .                     # 代码风格（E/F/I/UP/B/SIM）
+pytest -q                        # 单元测试（88 个）
+pytest --cov=app --cov-report=term-missing   # 覆盖率（≥90%）
+pip-audit                        # 依赖漏洞审计（CI 中执行）
+```
+
+安全基线：服务仅绑定 `127.0.0.1`；上传文件做后缀 + `%PDF` 魔数双重校验；
+删除接口校验文件路径必须位于上传目录内；外部 API 均通过参数化 HTTP 请求（无 SSRF 注入面）；
+Jinja2/Alpine 默认转义防止 XSS；密钥仅存于 `.env`（已 gitignore）。

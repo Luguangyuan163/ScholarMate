@@ -46,11 +46,15 @@ async def delete_paper(
     if row is None:
         raise HTTPException(status_code=404, detail="论文不存在")
 
+    upload_dir = request.app.state.settings.pdf_upload_dir
+    file_path = Path(row.file_path).resolve()
+    if not file_path.is_relative_to(upload_dir.resolve()):
+        raise HTTPException(status_code=400, detail="论文文件路径异常，拒绝删除")
+
     vector_store = request.app.state.vector_store
     await run_in_threadpool(vector_store.delete_document, pdf_id)
-    path = Path(row.file_path)
-    if path.exists():
-        path.unlink()
+    if file_path.exists():
+        file_path.unlink()
     await session.delete(row)
     await session.commit()
     return {"deleted": pdf_id}

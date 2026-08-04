@@ -13,3 +13,21 @@ def test_index_page(client):
     resp = client.get("/")
     assert resp.status_code == 200
     assert "ScholarMate" in resp.text
+
+
+def test_agent_page(client):
+    resp = client.get("/agent")
+    assert resp.status_code == 200
+    assert "Agent" in resp.text
+
+
+def test_translate_page(client):
+    resp = client.get("/translate")
+    assert resp.status_code == 200
+    assert "PDF 翻译" in resp.text
+
+
+def test_papers_page(client):
+    resp = client.get("/papers")
+    assert resp.status_code == 200
+    assert "论文库" in resp.text

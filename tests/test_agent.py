@@ -142,6 +142,118 @@ async def test_search_s2_tool_falls_back_to_openalex():
     assert payload[0]["citation_count"] == 88
 
 
+async def test_get_paper_detail_tool_returns_normalized_json():
+    class FakeS2:
+        async def get_paper_detail(self, paper_id):
+            return {
+                "paperId": "abc",
+                "title": "Detail Paper",
+                "abstract": "Abstract here",
+                "year": 2021,
+                "citationCount": 99,
+                "url": "https://example.com/abc",
+            }
+
+    class FakeOpenAlex:
+        async def get_paper_detail(self, paper_id):
+            return {}
+
+    tools = build_tools(
+        arxiv=None,
+        s2=FakeS2(),
+        openalex=FakeOpenAlex(),
+        embedding=None,
+        vector_store=None,
+        translation=None,
+    )
+    output = await tools[3].func(paper_id="abc")
+    payload = json.loads(output)
+    assert payload["title"] == "Detail Paper"
+    assert payload["citation_count"] == 99
+
+
+async def test_translate_text_tool_returns_translation():
+    class FakeTranslation:
+        async def translate_paragraph(self, text, target_lang="zh"):
+            return "翻译结果"
+
+    tools = build_tools(
+        arxiv=None,
+        s2=None,
+        openalex=None,
+        embedding=None,
+        vector_store=None,
+        translation=FakeTranslation(),
+    )
+    output = await tools[4].func(text="Hello", target_lang="zh")
+    assert json.loads(output) == {"translation": "翻译结果"}
+
+
+async def test_search_local_tool_returns_hits():
+    class FakeEmbedding:
+        async def embed_texts(self, texts):
+            return [[0.1, 0.2]]
+
+    class FakeHit:
+        def __init__(self) -> None:
+            self.pdf_id = 1
+            self.name = "lora_demo.pdf"
+            self.chunk_index = 3
+            self.distance = 0.42
+            self.document = "Low-rank adaptation reduces parameters."
+
+    class FakeVectorStore:
+        def search(self, vector, top_k):
+            return [FakeHit()]
+
+    tools = build_tools(
+        arxiv=None,
+        s2=None,
+        openalex=None,
+        embedding=FakeEmbedding(),
+        vector_store=FakeVectorStore(),
+        translation=None,
+    )
+    output = await tools[2].func(query="LoRA", top_k=3)
+    payload = json.loads(output)
+    assert payload[0]["pdf_id"] == 1
+    assert payload[0]["distance"] == 0.42
+    assert payload[0]["text"].startswith("Low-rank")
+
+
+async def test_get_paper_detail_tool_falls_back_to_openalex():
+    class BrokenS2:
+        async def get_paper_detail(self, paper_id):
+            raise httpx.HTTPStatusError(
+                "429",
+                request=httpx.Request("GET", "https://api.semanticscholar.org"),
+                response=httpx.Response(429),
+            )
+
+    class FakeOpenAlex:
+        async def get_paper_detail(self, paper_id):
+            return {
+                "title": "OpenAlex Detail",
+                "abstract": "Abstract",
+                "year": 2023,
+                "citationCount": 7,
+                "url": "https://openalex.org/W1",
+            }
+
+    tools = build_tools(
+        arxiv=None,
+        s2=BrokenS2(),
+        openalex=FakeOpenAlex(),
+        embedding=None,
+        vector_store=None,
+        translation=None,
+    )
+    output = await tools[3].func(paper_id="W1")
+    payload = json.loads(output)
+    assert payload["title"] == "OpenAlex Detail"
+    assert payload["citation_count"] == 7
+
+
 def test_sse_agent_endpoint_streams_events(app_settings):
     app = create_app(app_settings)
     app.state.llm_client = FakeLLM([LLMResponse(content="你好", tool_calls=[])])

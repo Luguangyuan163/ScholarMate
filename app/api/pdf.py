@@ -32,6 +32,8 @@ async def upload_pdf(
 
     settings = request.app.state.settings
     content = await file.read()
+    if not content.startswith(b"%PDF"):
+        raise HTTPException(status_code=400, detail="文件内容不是有效的 PDF")
     max_bytes = settings.max_upload_mb * 1024 * 1024
     if len(content) > max_bytes:
         raise HTTPException(

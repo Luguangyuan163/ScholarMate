@@ -11,6 +11,14 @@ from fastapi.testclient import TestClient
 from app.main import create_app
 
 
+class FailingPDFService:
+    def extract(self, pdf_path):
+        raise RuntimeError("extract boom")
+
+    def chunk_paragraphs(self, text, max_chars=800):
+        return [text]
+
+
 def _make_pdf(path: Path, lines: list[str]) -> None:
     doc = fitz.open()
     page = doc.new_page()
@@ -186,3 +194,103 @@ def test_translate_pdf_not_found_returns_404(app_settings):
             json={"target_lang": "zh"},
         )
     assert resp.status_code == 404
+
+
+def test_upload_rejects_oversize_file(app_settings, tmp_path):
+    pdf_path = tmp_path / "big.pdf"
+    pdf_path.write_bytes(b"%PDF-1.7" + b"0" * (2 * 1024 * 1024))
+    app = create_app(app_settings)
+    with TestClient(app) as client:
+        app.state.settings.max_upload_mb = 1
+        with open(pdf_path, "rb") as handle:
+            resp = client.post(
+                "/api/pdf/upload",
+                files={"file": ("big.pdf", handle, "application/pdf")},
+            )
+    assert resp.status_code == 413
+
+
+def test_upload_rejects_pdf_like_content(app_settings, tmp_path):
+    """魔数校验：仅后缀 .pdf 但内容不是 PDF 的文件应被拒绝。"""
+    fake_path = tmp_path / "fake.pdf"
+    fake_path.write_text("this is not a pdf", encoding="utf-8")
+    app = create_app(app_settings)
+    with TestClient(app) as client, open(fake_path, "rb") as handle:
+        resp = client.post(
+            "/api/pdf/upload",
+            files={"file": ("fake.pdf", handle, "application/pdf")},
+        )
+    assert resp.status_code == 400
+
+
+def test_upload_processing_failure_marks_failed(app_settings, tmp_path):
+    pdf_path = tmp_path / "broken.pdf"
+    _make_pdf(pdf_path, ["LoRA makes fine-tuning efficient."])
+    app = create_app(app_settings)
+    app.state.pdf_service = FailingPDFService()
+    with TestClient(app) as client, open(pdf_path, "rb") as handle:
+        resp = client.post(
+            "/api/pdf/upload",
+            files={"file": ("broken.pdf", handle, "application/pdf")},
+        )
+    assert resp.status_code == 500
+
+
+def test_translate_pdf_not_ready_returns_409(app_settings, tmp_path):
+    pdf_path = tmp_path / "pending.pdf"
+    _make_pdf(pdf_path, ["Pending paper."])
+    app = create_app(app_settings)
+    app.state.embedding_service = FakeEmbeddingService()
+    with TestClient(app) as client:
+        with open(pdf_path, "rb") as handle:
+            uploaded = client.post(
+                "/api/pdf/upload",
+                files={"file": ("pending.pdf", handle, "application/pdf")},
+            )
+        pdf_id = uploaded.json()["pdf_id"]
+
+        async def _mark_processing():
+            async with app.state.database.session_factory() as session:
+                from app.models.uploaded_pdf import UploadedPDF
+
+                row = await session.get(UploadedPDF, pdf_id)
+                row.status = "processing"
+                await session.commit()
+
+        import asyncio
+
+        asyncio.run(_mark_processing())
+        resp = client.post(f"/api/pdf/{pdf_id}/translate", json={"target_lang": "zh"})
+    assert resp.status_code == 409
+
+
+def test_translate_pdf_reports_llm_error(app_settings, tmp_path):
+    class FailingTranslation:
+        async def translate_paragraph(self, text, target_lang="zh"):
+            raise RuntimeError("llm down")
+
+    pdf_path = tmp_path / "err.pdf"
+    _make_multipage_pdf(
+        pdf_path,
+        [
+            "First paragraph. " * 40,
+            "Second paragraph. " * 40,
+        ],
+    )
+    app = create_app(app_settings)
+    app.state.embedding_service = FakeEmbeddingService()
+    app.state.translation_service = FailingTranslation()
+    with TestClient(app) as client:
+        with open(pdf_path, "rb") as handle:
+            uploaded = client.post(
+                "/api/pdf/upload",
+                files={"file": ("err.pdf", handle, "application/pdf")},
+            )
+        pdf_id = uploaded.json()["pdf_id"]
+        resp = client.post(
+            f"/api/pdf/{pdf_id}/translate",
+            json={"target_lang": "zh", "max_paragraphs": 2},
+        )
+    assert resp.status_code == 200
+    assert "event: error" in resp.text
+    assert "翻译失败" in resp.text

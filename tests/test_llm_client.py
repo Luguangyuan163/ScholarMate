@@ -9,7 +9,9 @@ import pytest
 
 from app.config import Settings
 from app.core.llm_client import (
+    BaseLLMClient,
     OpenAICompatibleClient,
+    _parse_arguments,
     get_llm_client,
 )
 
@@ -137,3 +139,53 @@ def test_factory_unknown_provider_raises():
     settings = Settings(_env_file=None, llm_provider="nope")
     with pytest.raises(ValueError):
         get_llm_client(settings)
+
+
+def test_factory_claude_not_implemented():
+    settings = Settings(_env_file=None, llm_provider="claude", anthropic_api_key="k")
+    with pytest.raises(NotImplementedError):
+        get_llm_client(settings)
+
+
+def test_parse_arguments_handles_invalid_json():
+    assert _parse_arguments("not json") == {}
+    assert _parse_arguments(None) == {}
+
+
+async def test_chat_with_tools_without_tool_calls():
+    class FakeNoToolsCompletions:
+        async def create(self, **kwargs):
+            message = SimpleNamespace(content="plain answer", tool_calls=None)
+            return SimpleNamespace(choices=[SimpleNamespace(message=message)])
+
+    client = OpenAICompatibleClient(
+        api_key="k",
+        base_url="http://x",
+        model="deepseek-v4-flash",
+        provider="deepseek",
+        _client=SimpleNamespace(chat=SimpleNamespace(completions=FakeNoToolsCompletions())),
+    )
+    response = await client.chat_with_tools([{"role": "user", "content": "hi"}], tools=[])
+    assert response.content == "plain answer"
+    assert response.tool_calls == []
+
+
+def test_base_client_methods_not_implemented():
+    client = BaseLLMClient()
+
+    async def _run():
+        calls = []
+        for method in (
+            client.chat([{"role": "user", "content": "hi"}]),
+            client.astream_chat([{"role": "user", "content": "hi"}]),
+            client.chat_with_tools([{"role": "user", "content": "hi"}], tools=[]),
+        ):
+            try:
+                await method
+            except NotImplementedError:
+                calls.append(True)
+        return calls
+
+    import asyncio
+
+    assert asyncio.run(_run()) == [True, True, True]
