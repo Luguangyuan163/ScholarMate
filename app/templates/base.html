@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}{{ app_title }}{% endblock %}</title>
+  <link rel="stylesheet" href="/static/css/app.css">
+  <!-- 开发期使用 CDN；P5 打包前需将 HTMX / Alpine 下载到 static/vendor/ 实现离线 -->
+  <script src="https://unpkg.com/htmx.org@1.9.12" defer></script>
+  <script src="https://unpkg.com/htmx.org@1.9.12/dist/ext/json-enc.js" defer></script>
+  <script src="https://unpkg.com/alpinejs@3.14.1/dist/cdn.min.js" defer></script>
+</head>
+<body>
+  <header class="topbar">
+    <h1>{{ app_title }}</h1>
+    <nav>
+      <a href="/">搜索</a>
+      <a href="/agent">Agent 对话</a>
+      <a href="/translate">翻译</a>
+      <a href="/papers">论文库</a>
+    </nav>
+  </header>
+  <main>
+    {% block content %}{% endblock %}
+  </main>
+  <script src="/static/js/agent_chat.js" defer></script>
+</body>
+</html>

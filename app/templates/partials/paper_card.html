@@ -1,0 +1,5 @@
+<li class="paper-card">
+  <h3><a href="{{ item.url }}" target="_blank">{{ item.title }}</a></h3>
+  <p class="meta">{{ item.authors | join("、") }} · {{ item.year or "N/A" }} · 引用 {{ item.citation_count }}</p>
+  <p class="abstract">{{ item.abstract[:200] }}{% if item.abstract|length > 200 %}…{% endif %}</p>
+</li>

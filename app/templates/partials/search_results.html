@@ -1,0 +1,9 @@
+{% if items %}
+<ul class="paper-list">
+  {% for item in items %}
+    {% include "partials/paper_card.html" %}
+  {% endfor %}
+</ul>
+{% else %}
+<p class="placeholder">没有找到结果。</p>
+{% endif %}
