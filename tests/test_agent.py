@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 
+import httpx
 from fastapi.testclient import TestClient
 
 from app.agent.agent_loop import agent_loop
@@ -95,6 +96,7 @@ async def test_search_arxiv_tool_returns_json():
     tools = build_tools(
         arxiv=FakeArxiv(),
         s2=None,
+        openalex=None,
         embedding=None,
         vector_store=None,
         translation=None,
@@ -103,6 +105,41 @@ async def test_search_arxiv_tool_returns_json():
     payload = json.loads(output)
     assert payload[0]["title"] == "LoRA Paper"
     assert payload[0]["external_id"] == "2106.09685"
+
+
+async def test_search_s2_tool_falls_back_to_openalex():
+    class BrokenS2:
+        async def search(self, query, limit=10):
+            raise httpx.HTTPStatusError(
+                "429",
+                request=httpx.Request("GET", "https://api.semanticscholar.org"),
+                response=httpx.Response(429),
+            )
+
+    class FakeOpenAlex:
+        async def search(self, query, limit=10):
+            return [
+                PaperItem(
+                    title="OpenAlex Paper",
+                    source="openalex",
+                    external_id="W1",
+                    year=2022,
+                    citation_count=88,
+                )
+            ]
+
+    tools = build_tools(
+        arxiv=None,
+        s2=BrokenS2(),
+        openalex=FakeOpenAlex(),
+        embedding=None,
+        vector_store=None,
+        translation=None,
+    )
+    output = await tools[1].func(query="LoRA", limit=5)
+    payload = json.loads(output)
+    assert payload[0]["source"] == "openalex"
+    assert payload[0]["citation_count"] == 88
 
 
 def test_sse_agent_endpoint_streams_events(app_settings):

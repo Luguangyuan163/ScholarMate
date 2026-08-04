@@ -18,6 +18,8 @@ from app.core.database import Database
 from app.core.llm_client import get_llm_client
 from app.services.arxiv_service import ArxivService
 from app.services.embedding_service import EmbeddingService
+from app.services.metadata_service import FallbackMetadataSource
+from app.services.openalex_service import OpenAlexService
 from app.services.pdf_service import PDFService
 from app.services.semantic_scholar_service import SemanticScholarService
 from app.services.translation_service import TranslationService
@@ -43,6 +45,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         if not hasattr(app.state, "s2_service"):
             app.state.s2_service = SemanticScholarService(
                 api_key=settings.semantic_scholar_api_key
+            )
+        if not hasattr(app.state, "openalex_service"):
+            app.state.openalex_service = OpenAlexService(mailto=settings.openalex_mailto)
+        if not hasattr(app.state, "metadata_service"):
+            app.state.metadata_service = FallbackMetadataSource(
+                s2=app.state.s2_service,
+                openalex=app.state.openalex_service,
+                prefer_s2=bool(settings.semantic_scholar_api_key),
             )
         if not hasattr(app.state, "pdf_service"):
             app.state.pdf_service = PDFService()

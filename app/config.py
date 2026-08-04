@@ -38,6 +38,7 @@ class Settings(BaseSettings):
 
     # 外部 API
     semantic_scholar_api_key: str = ""
+    openalex_mailto: str = ""
 
     # 存储
     database_url: str = f"sqlite+aiosqlite:///{(BASE_DIR / 'data' / 'scholar_mate.db').as_posix()}"

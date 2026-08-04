@@ -7,6 +7,7 @@ from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from typing import Any
 
+import httpx
 from starlette.concurrency import run_in_threadpool
 
 ToolFunc = Callable[..., Awaitable[str]]
@@ -30,7 +31,7 @@ class Tool:
         }
 
 
-def build_tools(arxiv, s2, embedding, vector_store, translation) -> list[Tool]:
+def build_tools(arxiv, s2, openalex, embedding, vector_store, translation) -> list[Tool]:
     return [
         Tool(
             name="search_arxiv",
@@ -40,9 +41,12 @@ def build_tools(arxiv, s2, embedding, vector_store, translation) -> list[Tool]:
         ),
         Tool(
             name="search_semantic_scholar",
-            description="在 Semantic Scholar 检索论文，返回引用量，可用于按引用量排序",
+            description=(
+                "在 Semantic Scholar 检索论文，返回引用量，可用于按引用量排序；"
+                "Semantic Scholar 不可用时自动回退 OpenAlex"
+            ),
             parameters=_search_params(),
-            func=_make_search_s2(s2),
+            func=_make_search_s2(s2, openalex),
         ),
         Tool(
             name="search_local",
@@ -52,13 +56,16 @@ def build_tools(arxiv, s2, embedding, vector_store, translation) -> list[Tool]:
         ),
         Tool(
             name="get_paper_detail",
-            description="获取论文详情（摘要、引用量、年份），paper_id 来自检索结果",
+            description=(
+                "获取论文详情（摘要、引用量、年份），paper_id 来自检索结果；"
+                "Semantic Scholar 不可用时自动回退 OpenAlex"
+            ),
             parameters={
                 "type": "object",
                 "properties": {"paper_id": {"type": "string"}},
                 "required": ["paper_id"],
             },
-            func=_make_paper_detail(s2),
+            func=_make_paper_detail(s2, openalex),
         ),
         Tool(
             name="translate_text",
@@ -102,12 +109,13 @@ def _make_search_arxiv(arxiv):
     return search_arxiv
 
 
-def _make_search_s2(s2):
+def _make_search_s2(s2, openalex):
     async def search_semantic_scholar(query: str, limit: int = 5) -> str:
-        items = await s2.search(query, limit=int(limit))
+        items = await _metadata_search(s2, openalex, query, int(limit))
         payload = [
             {
                 "title": item.title,
+                "source": item.source,
                 "year": item.year,
                 "citation_count": item.citation_count,
                 "external_id": item.external_id,
@@ -118,6 +126,15 @@ def _make_search_s2(s2):
         return json.dumps(payload, ensure_ascii=False)
 
     return search_semantic_scholar
+
+
+async def _metadata_search(s2, openalex, query: str, limit: int):
+    if s2 is not None:
+        try:
+            return await s2.search(query, limit=limit)
+        except httpx.HTTPError:
+            pass
+    return await openalex.search(query, limit=limit)
 
 
 def _make_search_local(embedding, vector_store):
@@ -139,9 +156,9 @@ def _make_search_local(embedding, vector_store):
     return search_local
 
 
-def _make_paper_detail(s2):
+def _make_paper_detail(s2, openalex):
     async def get_paper_detail(paper_id: str) -> str:
-        data = await s2.get_paper_detail(paper_id)
+        data = await _metadata_detail(s2, openalex, paper_id)
         return json.dumps(
             {
                 "title": data.get("title"),
@@ -154,6 +171,15 @@ def _make_paper_detail(s2):
         )
 
     return get_paper_detail
+
+
+async def _metadata_detail(s2, openalex, paper_id: str) -> dict:
+    if s2 is not None:
+        try:
+            return await s2.get_paper_detail(paper_id)
+        except httpx.HTTPError:
+            pass
+    return await openalex.get_paper_detail(paper_id)
 
 
 def _make_translate(translation):

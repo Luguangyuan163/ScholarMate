@@ -69,9 +69,14 @@ def test_search_arxiv_unreachable_returns_502(app_settings):
         async def search(self, query, limit=10):
             raise httpx.ConnectError("s2 down")
 
+    class UnreachableOpenAlex:
+        async def search(self, query, limit=10):
+            raise httpx.ConnectError("openalex down")
+
     app = create_app(app_settings)
     app.state.arxiv_service = UnreachableService()
     app.state.s2_service = UnreachableS2()
+    app.state.openalex_service = UnreachableOpenAlex()
     with TestClient(app) as client:
         resp = client.post("/api/search", json={"query": "LoRA"})
     assert resp.status_code == 502
@@ -94,6 +99,28 @@ def test_search_falls_back_to_s2(app_settings):
         resp = client.post("/api/search", json={"query": "LoRA"})
     assert resp.status_code == 200
     assert resp.json()["items"][0]["source"] == "s2"
+
+
+def test_search_s2_falls_back_to_openalex(app_settings):
+    class BrokenS2:
+        async def search(self, query, limit=10):
+            raise httpx.HTTPStatusError(
+                "429",
+                request=httpx.Request("GET", "https://api.semanticscholar.org"),
+                response=httpx.Response(429),
+            )
+
+    class FakeOpenAlex:
+        async def search(self, query, limit=10):
+            return [PaperItem(title="OpenAlex Result", source="openalex", external_id="W1")]
+
+    app = create_app(app_settings)
+    app.state.s2_service = BrokenS2()
+    app.state.openalex_service = FakeOpenAlex()
+    with TestClient(app) as client:
+        resp = client.post("/api/search", json={"query": "LoRA", "source": "s2"})
+    assert resp.status_code == 200
+    assert resp.json()["items"][0]["source"] == "openalex"
 
 
 def test_search_uses_cache(app_settings):

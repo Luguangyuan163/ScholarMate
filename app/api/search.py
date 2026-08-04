@@ -12,6 +12,7 @@ from starlette.concurrency import run_in_threadpool
 from app.schemas.search import PaperItem, SearchRequest, SearchResponse
 from app.services.arxiv_service import ArxivService
 from app.services.cache_service import SearchCacheStore
+from app.services.openalex_service import OpenAlexService
 from app.services.semantic_scholar_service import SemanticScholarService
 from app.services.vector_store_service import VectorHit, VectorStoreService
 
@@ -26,6 +27,10 @@ def _get_s2_service(request: Request) -> SemanticScholarService:
     return request.app.state.s2_service
 
 
+def _get_openalex_service(request: Request) -> OpenAlexService:
+    return request.app.state.openalex_service
+
+
 def _get_cache_store(request: Request) -> SearchCacheStore:
     return SearchCacheStore(request.app.state.database)
 
@@ -36,6 +41,7 @@ async def search_papers(
     payload: SearchRequest,
     arxiv: Annotated[ArxivService, Depends(_get_arxiv_service)],
     s2: Annotated[SemanticScholarService, Depends(_get_s2_service)],
+    openalex: Annotated[OpenAlexService, Depends(_get_openalex_service)],
     cache: Annotated[SearchCacheStore, Depends(_get_cache_store)],
 ) -> Response:
     if payload.source not in ("arxiv", "s2", "local"):
@@ -53,7 +59,7 @@ async def search_papers(
         items, used_source = cached, payload.source
     else:
         try:
-            items, used_source = await _fetch(payload, arxiv, s2)
+            items, used_source = await _fetch(payload, arxiv, s2, openalex)
         except httpx.HTTPError as exc:
             raise HTTPException(status_code=502, detail="检索服务暂时不可达，请稍后重试") from exc
         await cache.set(cache_key, items)
@@ -64,10 +70,10 @@ async def _fetch(
     payload: SearchRequest,
     arxiv: ArxivService,
     s2: SemanticScholarService,
+    openalex: OpenAlexService,
 ) -> tuple[list[PaperItem], str]:
     if payload.source == "s2":
-        items = await s2.search(payload.query, limit=payload.max_results)
-        return items, "s2"
+        return await _search_metadata(s2, openalex, payload)
     try:
         items = await arxiv.search(
             payload.query,
@@ -77,8 +83,21 @@ async def _fetch(
         )
         return items, "arxiv"
     except httpx.HTTPError:
+        return await _search_metadata(s2, openalex, payload)
+
+
+async def _search_metadata(
+    s2: SemanticScholarService,
+    openalex: OpenAlexService,
+    payload: SearchRequest,
+) -> tuple[list[PaperItem], str]:
+    """优先 S2，失败（如无 key 被限流）时回退 OpenAlex。"""
+    try:
         items = await s2.search(payload.query, limit=payload.max_results)
         return items, "s2"
+    except httpx.HTTPError:
+        items = await openalex.search(payload.query, limit=payload.max_results)
+        return items, "openalex"
 
 
 async def _search_local(

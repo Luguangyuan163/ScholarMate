@@ -58,10 +58,11 @@ poetry add pywebview fastapi uvicorn ...  # 依赖见 §6
 | 1 | **DeepSeek API** | 主力 LLM | 极低（V4-Pro 输入 ¥3/百万 token、输出 ¥6/百万 token，缓存命中 ¥0.025/百万 token） | [platform.deepseek.com](https://platform.deepseek.com)，注册后充值 ¥20 |
 | 2 | **DashScope（阿里云百炼）** | Embedding 向量 + 备用 LLM | 免费额度 | [dashscope.console.aliyun.com](https://dashscope.console.aliyun.com) |
 | 3 | **arXiv API** | 论文检索（主力数据源） | 免费，无需 Key | 无需注册 |
-| 4 | **Semantic Scholar API** | 引用量 + 论文详情（核心） | 免费（申请 key 后 1 RPS） | [api.semanticscholar.org](https://api.semanticscholar.org/api-docs) |
+| 4 | **Semantic Scholar API** | 引用量 + 论文详情（首选） | 免费（申请 key 后 1 RPS） | [api.semanticscholar.org](https://api.semanticscholar.org/api-docs) |
+| 4b | **OpenAlex API** | 引用量 + 论文详情（免 key 备用） | 免费（无需注册，带 mailto 进礼貌池） | [docs.openalex.org](https://docs.openalex.org/) |
 | 5 | Anthropic API Key | Claude 模型（可选） | 按量付费 | 暂不申请 |
 
-> **策略**：当前需申请 DeepSeek、DashScope、Semantic Scholar 三个账号；arXiv 无需注册。Claude 作为可选增强，不进入核心路径。
+> **策略**：必配 DeepSeek、DashScope；Semantic Scholar 为可选项（申请到 key 则优先使用），未申请到时自动回退免 key 的 OpenAlex；arXiv 无需注册。Claude 作为可选增强，不进入核心路径。
 
 ---
 
@@ -355,14 +356,14 @@ run.py ──▶ 启动 Uvicorn 服务线程 ──▶ 轮询 /api/health
               SSE 流式输出 → 分类论文列表 + 摘要翻译
 ```
 
-> 说明：「按引用量排序」依赖 Semantic Scholar 的 `citationCount` 字段，arXiv API 不提供引用数据。因此 S2 为核心工具而非可选。
+> 说明：「按引用量排序」优先使用 Semantic Scholar 的 `citationCount` 字段，arXiv API 不提供引用数据；S2 不可用（如无 key 被限流）时自动回退 OpenAlex 的 `cited_by_count`，保证该场景无 key 也可演示（2026-08-04 实机验证通过）。
 
 ### 4.4 Agent 工具清单
 
 | 工具名 | 功能 | 参数 | 优先级 |
 |---|---|---|---|
 | `search_arxiv` | 搜索 arXiv 论文 | query, max_results, year_from, year_to | 核心 |
-| `search_semantic_scholar` | 语义搜索 S2 + 引用量 | query, limit | 核心 |
+| `search_semantic_scholar` | 语义搜索（S2 优先，自动回退 OpenAlex）+ 引用量 | query, limit | 核心 |
 | `search_local` | 语义搜索本地 PDF | query, top_k | 核心 |
 | `get_paper_detail` | 获取论文详情（含引用量） | paper_id | 核心 |
 | `translate_text` | 翻译指定文本 | text, target_lang | 核心 |
@@ -507,7 +508,7 @@ pdfplumber>=0.11,<1.0
 pytesseract>=0.3,<1.0       # OCR（可选，默认不启用）
 
 # ===== HTTP =====
-httpx>=0.28,<1.0            # 异步 HTTP（arXiv/S2）
+httpx>=0.28,<1.0            # 异步 HTTP（arXiv/S2/OpenAlex）
 aiofiles>=24.0,<25.0
 
 # ===== 工具 =====
@@ -582,7 +583,7 @@ MAX_UPLOAD_MB=50
 - [x] SQLAlchemy 模型 + 数据库初始化
 - [x] LLM 客户端工厂（DeepSeek V4 / Qwen，`scripts/test_llm.py` 验证）
 - [x] arXiv API 集成（User-Agent、限速 ≥1 次/3s、条件重试）
-- [x] Semantic Scholar 集成（引用量、双源回退）
+- [x] 元数据源集成：Semantic Scholar（引用量、双源回退）+ OpenAlex 免 key 备用
 - [x] 搜索结果 24h 缓存
 - [x] `/api/search` 搜索端点（JSON / HTMX 双返回，失败降级 502）
 - [x] Jinja2 首页 + 搜索结果页
@@ -613,7 +614,7 @@ MAX_UPLOAD_MB=50
 - [x] SSE 流式输出 + 前端 fetch 流式解析（打字机效果）
 - [x] Agent 对话页面（聊天界面 + 工具调用状态展示）
 - [x] 实测验证：Agent 真实调用 search_local 多轮检索本地论文库并输出结构化总结（DeepSeek 并行工具调用正常）
-- [ ] 「按引用量排序」场景：待申请 Semantic Scholar key 后验证
+- [x] 「按引用量排序」场景：已通过 OpenAlex 免 key 实机验证（2026-08-04）
 
 ### 第四阶段：PDF 翻译 + 界面打磨（预计 3-5 天）
 
@@ -690,7 +691,7 @@ MAX_UPLOAD_MB=50
 |---|---|---|---|
 | LLM API 不稳定/欠费 | 低 | Agent 不可用 | DeepSeek 充值 ¥20 足够；配置 DashScope 备用；缓存与重试 |
 | 模型名/接口变更 | 中 | 调用失败 | LLM 客户端工厂 + 配置化；阶段一先行验证 |
-| arXiv/S2 限流或不可达 | 中 | 搜索无结果 | 限速器 + 24h 缓存 + 退避重试；arXiv 不可达时自动回退 Semantic Scholar（2026-08 实测 export.arxiv.org 在当前网络超时，S2 可达） |
+| arXiv/S2 限流或不可达 | 中 | 搜索无结果 | 限速器 + 24h 缓存 + 退避重试；回退链 arXiv → S2 → OpenAlex（2026-08 实测 export.arxiv.org 超时、S2 无 key 持续 429、OpenAlex 免 key 可用） |
 | PDF 双栏/公式提取乱序 | 高 | 翻译质量差 | 阶段二前置小样验证；pdfplumber 布局分析 + LLM 清洗 |
 | SSE 联调复杂 | 中 | 流式输出异常 | 先跑通最小流式 Demo；前端 fetch 流式解析 |
 | PyInstaller 打包兼容问题 | 中 | exe 无法运行 | one-folder 模式 + 隐藏导入清单 + 新机验证清单 |
@@ -706,6 +707,7 @@ MAX_UPLOAD_MB=50
 - DeepSeek API：[platform.deepseek.com](https://platform.deepseek.com) / [api-docs.deepseek.com](https://api-docs.deepseek.com)
 - arXiv API：[info.arxiv.org/help/api](https://info.arxiv.org/help/api)
 - Semantic Scholar API：[api.semanticscholar.org](https://api.semanticscholar.org/api-docs)
+- OpenAlex API：[docs.openalex.org](https://docs.openalex.org/)（免 key，`cited_by_count` 提供引用量）
 - 阿里云百炼 DashScope：[dashscope.console.aliyun.com](https://dashscope.console.aliyun.com)
 - FastAPI：[fastapi.tiangolo.com](https://fastapi.tiangolo.com)
 - ChromaDB：[docs.trychroma.com](https://docs.trychroma.com)

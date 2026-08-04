@@ -155,7 +155,7 @@ ScholarMate 是基于大语言模型（LLM）的学术助手，交付形态为 *
 | Embedding | DashScope text-embedding-v3 | DeepSeek 官方 API 未提供 Embedding 接口；国内直连且有免费额度 |
 | 主力 LLM | DeepSeek `deepseek-v4-flash` / `deepseek-v4-pro` | 性价比高、国内直连、兼容 OpenAI SDK |
 | Agent 框架 | 自建 ReAct 主循环（约 200 行） | 展示核心机制；规避第三方框架版本兼容风险 |
-| 检索数据源 | arXiv（主）+ Semantic Scholar（引用量） | 引用量排序依赖 S2 的 citationCount |
+| 检索数据源 | arXiv（主）+ Semantic Scholar（引用量）+ OpenAlex（免 key 备用） | 引用量排序优先 S2 citationCount，不可用时回退 OpenAlex cited_by_count |
 | 流式方案 | SSE（POST + fetch 流式解析） | EventSource 仅支持 GET，POST 接口需用 fetch 解析 |
 | 打包 | PyInstaller（one-folder）+ 可选 Inno Setup | 产出免 Python 环境的 exe；数据目录运行时生成 |
 
@@ -224,7 +224,7 @@ ScholarMate 是基于大语言模型（LLM）的学术助手，交付形态为 *
 ### 6.1 工作包细分
 
 - WBS-3.1 arXiv API 封装（User-Agent、限速 ≥1 次/3s、重试）
-- WBS-3.2 Semantic Scholar 封装（引用量、详情、限速 1 RPS）
+- WBS-3.2 元数据源封装：Semantic Scholar（引用量、详情、限速 1 RPS）+ OpenAlex 免 key 备用
 - WBS-3.3 搜索结果 24h 缓存
 - WBS-4.1 PDF 上传与存储（类型/大小校验）
 - WBS-4.2 PyMuPDF 文本提取 + pdfplumber 双栏处理 + 分块
@@ -267,7 +267,8 @@ ScholarMate 是基于大语言模型（LLM）的学术助手，交付形态为 *
 | DeepSeek API | 主力 LLM | 是 | 注册并充值 ¥20 |
 | DashScope（阿里云百炼） | Embedding + 备用 LLM | 是 | 注册，使用免费额度 |
 | arXiv API | 论文检索 | 是 | 无需注册 |
-| Semantic Scholar API | 引用量、论文详情 | 是（核心） | 申请免费 key（1 RPS） |
+| Semantic Scholar API | 引用量、论文详情 | 否（首选） | 申请免费 key（1 RPS） |
+| OpenAlex API | 引用量、论文详情（备用） | 是（兜底） | 无需注册，建议配置 OPENALEX_MAILTO 进礼貌池 |
 | Anthropic（Claude） | 可选模型 | 否 | 暂不申请 |
 
 ---
@@ -301,7 +302,7 @@ ScholarMate 是基于大语言模型（LLM）的学术助手，交付形态为 *
 |---|---|---|---|---|---|---|---|
 | R-01 | DeepSeek API 不稳定或余额不足 | 低 | 高 | 中 | 缓存 + 重试；配置 Qwen 备用 | 切换 `LLM_PROVIDER` | 学生 |
 | R-02 | 模型名或接口发生变更 | 中 | 中 | 中 | LLM 客户端工厂 + 配置化 | 按官方文档更新配置 | 学生 |
-| R-03 | arXiv / S2 限流或不可达（实测 export.arxiv.org 在当前网络超时，S2 可达） | 中 | 中 | 中 | 限速器 + 24h 缓存 + 退避重试；arXiv 不可达时自动回退 Semantic Scholar | 降低并发、扩大缓存、切换数据源 | 学生 |
+| R-03 | arXiv / S2 限流或不可达（实测 export.arxiv.org 在当前网络超时；S2 无 key 时持续 429） | 中 | 中 | 中 | 限速器 + 24h 缓存 + 退避重试；回退链 arXiv → S2 → OpenAlex（免 key） | 降低并发、扩大缓存、切换数据源 | 学生 |
 | R-04 | PDF 双栏/公式提取乱序 | 高 | 中 | 高 | 阶段二先行小样验证；pdfplumber + LLM 清洗 | 演示选用可提取样本，论文声明局限 | 学生 |
 | R-05 | SSE 流式联调复杂 | 中 | 中 | 中 | 先跑通最小流式 Demo | 前端改用 fetch 流式解析 | 学生 |
 | R-06 | 课程/实习等时间冲突 | 中 | 高 | 高 | 里程碑预留缓冲 + 每周复盘 | 压缩 UI 打磨范围，保核心功能 | 学生 |
@@ -468,6 +469,7 @@ docs/
 - DeepSeek 官方文档：[api-docs.deepseek.com](https://api-docs.deepseek.com)
 - arXiv API：[info.arxiv.org/help/api](https://info.arxiv.org/help/api)
 - Semantic Scholar API：[api.semanticscholar.org](https://api.semanticscholar.org/api-docs)
+- OpenAlex API：[api.openalex.org](https://docs.openalex.org/)（免 key，`cited_by_count` 提供引用量）
 - 阿里云百炼 DashScope：[dashscope.console.aliyun.com](https://dashscope.console.aliyun.com)
 - pywebview：[pywebview.flowrl.com](https://pywebview.flowrl.com)
 - PyInstaller：[pyinstaller.org](https://pyinstaller.org)

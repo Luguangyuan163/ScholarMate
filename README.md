@@ -15,7 +15,7 @@
 python -m venv .venv
 .venv\Scripts\activate
 pip install -e ".[dev]"
-copy .env.example .env        # 填入 DeepSeek / DashScope / S2 API Key
+copy .env.example .env        # 填入 DeepSeek / DashScope API Key；S2 Key 可选，无 Key 时自动用 OpenAlex
 python run.py                 # 桌面窗口（P5 前可用浏览器访问 http://127.0.0.1:8765）
 ```
 
@@ -46,7 +46,7 @@ ruff check .
 app/
   desktop/    # 桌面壳（服务生命周期 + pywebview 窗口）
   api/        # 路由层
-  services/   # 业务逻辑（arXiv / S2 / PDF / 向量 / 翻译）
+  services/   # 业务逻辑（arXiv / S2 / OpenAlex / PDF / 向量 / 翻译）
   agent/      # ReAct Agent 引擎
   core/       # 数据库 / LLM 工厂 / 异常
   models/     # SQLAlchemy ORM
@@ -63,7 +63,7 @@ docs/         # 设计方案 / 计划书 / 答辩素材
 
 | 阶段 | 内容 | 状态 |
 |---|---|---|
-| P1 | 骨架 + 多源搜索（arXiv + S2 回退 + 缓存） | 基本完成，待本机验证 |
+| P1 | 骨架 + 多源搜索（arXiv + S2 回退 + OpenAlex 兜底 + 缓存） | 完成（OpenAlex 实机验证通过） |
 | P2 | PDF 提取 + 向量检索 + 本地搜索 | 完成（真实论文验证通过） |
 | P3 | ReAct Agent + SSE 流式对话 | 完成（本地检索场景实测通过） |
 | P4 | 翻译 + 界面打磨 | 计划 |

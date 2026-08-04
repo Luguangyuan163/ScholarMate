@@ -20,6 +20,7 @@ async def agent_chat(request: Request, payload: AgentChatRequest) -> StreamingRe
     tools = build_tools(
         arxiv=request.app.state.arxiv_service,
         s2=request.app.state.s2_service,
+        openalex=request.app.state.openalex_service,
         embedding=request.app.state.embedding_service,
         vector_store=request.app.state.vector_store,
         translation=request.app.state.translation_service,
