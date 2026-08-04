@@ -598,8 +598,10 @@ MAX_UPLOAD_MB=50
 - [x] ChromaDB 存储与查询封装（含删除）
 - [x] `/api/search?source=local` 语义检索
 - [x] 论文库管理 API（列表 / 删除）
-- [ ] 用 3 篇真实论文验证双栏提取效果（本机待验证）
-- [ ] 验证：配置真实 Key 后，上传 3 篇 PDF → 自然语言搜索 → 返回相关段落
+- [x] 用真实论文（arXiv LoRA 2106.09685）验证提取 → 分块 → 向量化 → 语义检索全链路
+- [x] 文本规范化（NFKC 分解 PDF 连字，实测 ﬁne-tuning → fine-tuning）
+- [x] Embedding 分批调用（DashScope 单次上限 10 条，实测批量超限后修复）
+- [ ] 双栏论文提取效果：待用 3 篇双栏排版论文验证
 
 ### 第三阶段：Agent 智能检索（预计 3-5 天）
 

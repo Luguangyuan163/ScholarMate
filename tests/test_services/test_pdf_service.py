@@ -6,7 +6,7 @@ from pathlib import Path
 
 import fitz
 
-from app.services.pdf_service import PDFService
+from app.services.pdf_service import PDFService, _normalize_text
 
 
 def _make_pdf(path: Path, lines: list[str]) -> None:
@@ -43,3 +43,8 @@ def test_chunk_paragraphs_respects_max_chars():
 def test_chunk_paragraphs_empty():
     service = PDFService()
     assert service.chunk_paragraphs("") == []
+
+
+def test_normalize_text_decomposes_ligatures():
+    assert _normalize_text("ﬁne-tuning is eﬃcient") == "fine-tuning is efficient"
+    assert _normalize_text("ﬀ ﬂ ﬃ ﬄ") == "ff fl ffi ffl"
