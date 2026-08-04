@@ -685,7 +685,7 @@ MAX_UPLOAD_MB=50
 |---|---|---|---|
 | LLM API 不稳定/欠费 | 低 | Agent 不可用 | DeepSeek 充值 ¥20 足够；配置 DashScope 备用；缓存与重试 |
 | 模型名/接口变更 | 中 | 调用失败 | LLM 客户端工厂 + 配置化；阶段一先行验证 |
-| arXiv/S2 限流 | 中 | 搜索无结果 | 限速器 + 24h 缓存 + 退避重试 |
+| arXiv/S2 限流或不可达 | 中 | 搜索无结果 | 限速器 + 24h 缓存 + 退避重试；arXiv 不可达时自动回退 Semantic Scholar（2026-08 实测 export.arxiv.org 在当前网络超时，S2 可达） |
 | PDF 双栏/公式提取乱序 | 高 | 翻译质量差 | 阶段二前置小样验证；pdfplumber 布局分析 + LLM 清洗 |
 | SSE 联调复杂 | 中 | 流式输出异常 | 先跑通最小流式 Demo；前端 fetch 流式解析 |
 | PyInstaller 打包兼容问题 | 中 | exe 无法运行 | one-folder 模式 + 隐藏导入清单 + 新机验证清单 |
