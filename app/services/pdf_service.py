@@ -1,14 +1,40 @@
-"""PDF 文本提取与分块（P2 接入）。
+"""PDF 文本提取与分块（P2）。
 
-PyMuPDF / pdfplumber 为同步库，调用方需经 anyio.to_thread 执行。
+PyMuPDF 为同步库，调用方需经线程池（run_in_threadpool）执行。
 """
 
 from __future__ import annotations
 
+from dataclasses import dataclass
+
+import fitz
+
+
+@dataclass
+class PDFExtractResult:
+    text: str
+    page_count: int
+
 
 class PDFService:
-    async def extract_text(self, pdf_path: str) -> str:
-        raise NotImplementedError("PDF 文本提取将在 P2 接入")
+    def extract(self, pdf_path: str) -> PDFExtractResult:
+        """提取 PDF 全文。"""
+        with fitz.open(pdf_path) as doc:
+            pages = [page.get_text("text") for page in doc]
+            return PDFExtractResult(text="\n".join(pages), page_count=len(pages))
 
-    async def split_paragraphs(self, text: str) -> list[str]:
-        raise NotImplementedError("PDF 分块将在 P2 接入")
+    def chunk_paragraphs(self, text: str, max_chars: int = 800) -> list[str]:
+        """按段落累积分块，每块不超过 max_chars 字符。"""
+        paragraphs = [p.strip() for p in text.split("\n\n") if p.strip()]
+        chunks: list[str] = []
+        current = ""
+        for paragraph in paragraphs:
+            if len(current) + len(paragraph) + 1 <= max_chars:
+                current = f"{current}\n{paragraph}" if current else paragraph
+            else:
+                if current:
+                    chunks.append(current)
+                current = paragraph
+        if current:
+            chunks.append(current)
+        return chunks

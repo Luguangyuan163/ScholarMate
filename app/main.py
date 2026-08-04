@@ -16,7 +16,10 @@ from app.api import agent, papers, pdf, search
 from app.config import Settings
 from app.core.database import Database
 from app.services.arxiv_service import ArxivService
+from app.services.embedding_service import EmbeddingService
+from app.services.pdf_service import PDFService
 from app.services.semantic_scholar_service import SemanticScholarService
+from app.services.vector_store_service import VectorStoreService
 
 BASE_DIR = Path(__file__).resolve().parent
 templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
@@ -38,6 +41,16 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         if not hasattr(app.state, "s2_service"):
             app.state.s2_service = SemanticScholarService(
                 api_key=settings.semantic_scholar_api_key
+            )
+        if not hasattr(app.state, "pdf_service"):
+            app.state.pdf_service = PDFService()
+        if not hasattr(app.state, "embedding_service"):
+            app.state.embedding_service = EmbeddingService(
+                api_key=settings.dashscope_api_key, model=settings.embedding_model
+            )
+        if not hasattr(app.state, "vector_store"):
+            app.state.vector_store = VectorStoreService(
+                persist_dir=settings.chroma_persist_dir
             )
         yield
         await db.close()

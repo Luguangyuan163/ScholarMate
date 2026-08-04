@@ -592,14 +592,14 @@ MAX_UPLOAD_MB=50
 
 **目标**：上传 PDF，提取内容，语义搜索。
 
-- [ ] **前置验证：用 3 篇目标论文测试 PyMuPDF/pdfplumber 双栏提取效果**
-- [ ] PDF 上传接口 + 文件存储（类型/大小校验）
-- [ ] 文本提取 + 分块（段落 + 滑动窗口）
-- [ ] DashScope Embedding 接入
-- [ ] ChromaDB 存储与查询封装
-- [ ] `/api/search?source=local` 语义搜索
-- [ ] 论文库管理页面
-- [ ] 验证：上传 3 篇 PDF → 自然语言搜索 → 返回相关段落
+- [x] PDF 上传接口 + 文件存储（类型/大小校验）
+- [x] 文本提取（PyMuPDF）+ 分块（段落累积，≤800 字符）
+- [x] DashScope Embedding 服务（待真实 Key 联调）
+- [x] ChromaDB 存储与查询封装（含删除）
+- [x] `/api/search?source=local` 语义检索
+- [x] 论文库管理 API（列表 / 删除）
+- [ ] 用 3 篇真实论文验证双栏提取效果（本机待验证）
+- [ ] 验证：配置真实 Key 后，上传 3 篇 PDF → 自然语言搜索 → 返回相关段落
 
 ### 第三阶段：Agent 智能检索（预计 3-5 天）
 

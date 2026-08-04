@@ -56,7 +56,7 @@ def test_search_returns_html_for_htmx(app_settings):
 def test_search_unsupported_source_returns_501(app_settings):
     app = create_app(app_settings)
     with TestClient(app) as client:
-        resp = client.post("/api/search", json={"query": "x", "source": "local"})
+        resp = client.post("/api/search", json={"query": "x", "source": "pubmed"})
     assert resp.status_code == 501
 
 
@@ -65,8 +65,13 @@ def test_search_arxiv_unreachable_returns_502(app_settings):
         async def search(self, query, max_results=10, year_from=None, year_to=None):
             raise httpx.ReadTimeout("arxiv timeout")
 
+    class UnreachableS2:
+        async def search(self, query, limit=10):
+            raise httpx.ConnectError("s2 down")
+
     app = create_app(app_settings)
     app.state.arxiv_service = UnreachableService()
+    app.state.s2_service = UnreachableS2()
     with TestClient(app) as client:
         resp = client.post("/api/search", json={"query": "LoRA"})
     assert resp.status_code == 502
