@@ -63,27 +63,42 @@ window.translateApp = function () {
 
     async translatePdf(pdfId) {
       this.status = "准备翻译…";
-      const resp = await fetch("/api/pdf/" + pdfId + "/translate", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          target_lang: this.targetLang,
-          max_paragraphs: this.maxParagraphs || 0,
-        }),
+      const params = new URLSearchParams({
+        target_lang: this.targetLang,
+        max_paragraphs: String(this.maxParagraphs || 0),
       });
-      if (!resp.ok) {
-        const body = await resp.json().catch(() => ({}));
-        this.status = "翻译请求失败: " + (body.detail || ("HTTP " + resp.status));
-        return;
-      }
-      await window.SSEUtil.readBody(resp, (part) => this.handleEvent(part));
+      const source = new EventSource(
+        "/api/pdf/" + pdfId + "/translate-stream?" + params,
+      );
+      let finished = false;
+      const close = () => {
+        if (finished) return;
+        finished = true;
+        source.close();
+      };
+      source.addEventListener("progress", (event) =>
+        this.handleEvent("progress", event.data),
+      );
+      source.addEventListener("segment", (event) =>
+        this.handleEvent("segment", event.data),
+      );
+      source.addEventListener("error", (event) =>
+        this.handleEvent("error", event.data),
+      );
+      source.addEventListener("done", (event) => {
+        this.handleEvent("done", event.data);
+        close();
+      });
+      source.onerror = () => {
+        if (finished) return;
+        close();
+        if (!this.status.includes("完成")) {
+          this.status = "翻译连接中断，请重试";
+        }
+      };
     },
 
-    handleEvent(part) {
-      const lines = part.split("\n");
-      const type = this.lineValue(lines, "event:");
-      const raw = this.lineValue(lines, "data:");
-      if (!raw) return;
+    handleEvent(type, raw) {
       let payload;
       try {
         payload = JSON.parse(raw);
@@ -103,11 +118,6 @@ window.translateApp = function () {
       } else if (type === "error") {
         this.status = "错误: " + payload.content;
       }
-    },
-
-    lineValue(lines, prefix) {
-      const line = lines.find((l) => l.startsWith(prefix));
-      return line ? line.slice(prefix.length).trim() : "";
     },
   };
 };

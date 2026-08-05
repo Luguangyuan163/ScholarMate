@@ -25,6 +25,8 @@ window.chatApp = function () {
         role: m.role,
         content: m.content,
         tools: [],
+        phase: "idle",
+        statusText: "",
         pdf: { filename: "", status: "", segments: [] },
       }));
       this.scrollToBottom();
@@ -43,18 +45,54 @@ window.chatApp = function () {
       this.pushMessage({ role: "user", content: text });
       await this.saveMessage("user", text);
       this.busy = true;
-      const assistant = this.pushMessage({ role: "assistant", content: "" });
+      const assistant = this.pushMessage({
+        role: "assistant",
+        content: "",
+        phase: "thinking",
+        statusText: "正在思考…",
+      });
+      this.streamAssistant(text, assistant);
+    },
+
+    streamAssistant(text, assistant) {
+      const source = new EventSource(
+        "/api/agent/chat-stream?query=" +
+          encodeURIComponent(text) +
+          "&max_iterations=6",
+      );
+      let finished = false;
+      const close = () => {
+        if (finished) return;
+        finished = true;
+        source.close();
+      };
+      const onEvent = (type) => (event) =>
+        this.handleEvent(type, event.data, assistant);
+      source.addEventListener("message", onEvent("message"));
+      source.addEventListener("tool_call", onEvent("tool_call"));
+      source.addEventListener("tool_result", onEvent("tool_result"));
+      source.addEventListener("error", onEvent("error"));
+      source.addEventListener("done", (event) => {
+        this.handleEvent("done", event.data, assistant);
+        close();
+        this.finishSend(assistant);
+      });
+      source.onerror = () => {
+        if (finished) return;
+        close();
+        if (!assistant.content) {
+          assistant.phase = "error";
+          assistant.statusText = "连接中断，请重试";
+        }
+        this.finishSend(assistant);
+      };
+    },
+
+    async finishSend(assistant) {
       try {
-        const resp = await fetch("/api/agent/chat", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ query: text, max_iterations: 6 }),
-        });
-        if (!resp.ok) throw new Error("HTTP " + resp.status);
-        await window.SSEUtil.readBody(resp, (part) =>
-          this.handleEvent(part, assistant),
-        );
-        if (assistant.content) await this.saveMessage("assistant", assistant.content);
+        if (assistant.content) {
+          await this.saveMessage("assistant", assistant.content);
+        }
         if (this.collectedPapers.length) {
           if (localStorage.getItem("sm_auto_save") !== "0") {
             await this.autoSavePapers();
@@ -62,18 +100,13 @@ window.chatApp = function () {
             this.suggestPapers = [...this.collectedPapers];
           }
         }
-      } catch (err) {
-        if (!assistant.content) assistant.content = "请求失败: " + err.message;
       } finally {
         this.busy = false;
         this.scrollToBottom();
       }
     },
 
-    handleEvent(part, assistant) {
-      const type = this.lineValue(part, "event:");
-      const raw = this.lineValue(part, "data:");
-      if (!raw) return;
+    handleEvent(type, raw, assistant) {
       let payload;
       try {
         payload = JSON.parse(raw);
@@ -81,17 +114,64 @@ window.chatApp = function () {
         return;
       }
       if (type === "tool_call") {
-        if (!assistant.tools) assistant.tools = [];
+        assistant.tools = assistant.tools || [];
         assistant.tools.push(payload.name);
+        assistant.phase = "tool";
+        assistant.statusText = this.toolLabel(payload.name);
         this.scrollToBottom();
       } else if (type === "tool_result") {
+        assistant.statusText = this.toolSummary(payload.name, payload.content);
         this.collectPapers(payload.name, payload.content);
+        this.scrollToBottom();
       } else if (type === "message") {
+        assistant.phase = "streaming";
+        assistant.statusText = "";
         assistant.content += payload.content || "";
         this.scrollToBottom();
       } else if (type === "error") {
-        assistant.content = "错误: " + payload.content;
+        assistant.phase = "error";
+        if (!assistant.content) {
+          assistant.content = "请求失败: " + (payload.content || "");
+        }
+        assistant.statusText = "";
+      } else if (type === "done") {
+        assistant.phase = "done";
+        assistant.statusText = "";
       }
+    },
+
+    toolLabel(name) {
+      const labels = {
+        search_arxiv: "正在检索 arXiv…",
+        search_semantic_scholar: "正在检索 Semantic Scholar…",
+        search_local: "正在检索本地论文库…",
+        get_paper_detail: "正在获取论文详情…",
+        translate_text: "正在翻译文本…",
+      };
+      return labels[name] || ("正在执行 " + name + "…");
+    },
+
+    toolSummary(name, raw) {
+      let count = null;
+      try {
+        const data = JSON.parse(raw);
+        if (Array.isArray(data)) count = data.length;
+      } catch {
+        // 非 JSON 结果（如错误信息）不统计条数
+      }
+      const summaries = {
+        search_arxiv:
+          count !== null ? "arXiv 返回 " + count + " 篇" : "arXiv 检索完成",
+        search_semantic_scholar:
+          count !== null
+            ? "Semantic Scholar 返回 " + count + " 篇"
+            : "Semantic Scholar 检索完成",
+        search_local:
+          count !== null ? "本地论文库返回 " + count + " 条" : "本地检索完成",
+        get_paper_detail: "已获取论文详情",
+        translate_text: "翻译完成",
+      };
+      return summaries[name] || ("已完成 " + name);
     },
 
     collectPapers(toolName, raw) {
@@ -219,25 +299,43 @@ window.chatApp = function () {
 
     async translatePdf(msg, pdfIdOverride) {
       const pdfId = pdfIdOverride || msg.pdf.pdfId;
-      const resp = await fetch("/api/pdf/" + pdfId + "/translate", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ target_lang: "zh", max_paragraphs: 20 }),
+      msg.pdf.status = "准备翻译…";
+      const params = new URLSearchParams({
+        target_lang: "zh",
+        max_paragraphs: "20",
       });
-      if (!resp.ok) {
-        msg.pdf.status = "翻译请求失败: HTTP " + resp.status;
-        return;
-      }
-      msg.pdf.status = "翻译中…";
-      await window.SSEUtil.readBody(resp, (part) =>
-        this.handlePdfEvent(part, msg),
+      const source = new EventSource(
+        "/api/pdf/" + pdfId + "/translate-stream?" + params,
       );
+      let finished = false;
+      const close = () => {
+        if (finished) return;
+        finished = true;
+        source.close();
+      };
+      source.addEventListener("progress", (event) =>
+        this.handlePdfEvent("progress", event.data, msg),
+      );
+      source.addEventListener("segment", (event) =>
+        this.handlePdfEvent("segment", event.data, msg),
+      );
+      source.addEventListener("error", (event) =>
+        this.handlePdfEvent("error", event.data, msg),
+      );
+      source.addEventListener("done", (event) => {
+        this.handlePdfEvent("done", event.data, msg);
+        close();
+      });
+      source.onerror = () => {
+        if (finished) return;
+        close();
+        if (msg.pdf.status && !msg.pdf.status.includes("完成")) {
+          msg.pdf.status = "翻译连接中断，请重试";
+        }
+      };
     },
 
-    handlePdfEvent(part, msg) {
-      const type = this.lineValue(part, "event:");
-      const raw = this.lineValue(part, "data:");
-      if (!raw) return;
+    handlePdfEvent(type, raw, msg) {
       let payload;
       try {
         payload = JSON.parse(raw);
@@ -285,17 +383,14 @@ window.chatApp = function () {
 
     pushMessage(m) {
       if (!m.pdf) m.pdf = { filename: "", status: "", segments: [] };
+      if (!m.phase) m.phase = "idle";
+      if (!m.statusText) m.statusText = "";
       this.messages.push(m);
       this.scrollToBottom();
       // 必须返回响应式代理而非原始对象：Alpine 只追踪经代理的写入，
       // 若返回原始对象，后续 assistant.content / msg.pdf.status 等变更
       // 不会触发 DOM 重渲染，消息要到重新进入会话才会显示。
       return this.messages[this.messages.length - 1];
-    },
-
-    lineValue(part, prefix) {
-      const line = part.split("\n").find((l) => l.startsWith(prefix));
-      return line ? line.slice(prefix.length).trim() : "";
     },
 
     scrollToBottom() {

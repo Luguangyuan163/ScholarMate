@@ -289,3 +289,27 @@ def test_sse_agent_endpoint_streams_events(app_settings):
     assert "text/event-stream" in resp.headers["content-type"]
     assert "event: message" in resp.text
     assert "你好" in resp.text
+
+
+def test_sse_agent_get_stream_endpoint(app_settings):
+    """EventSource 使用的 GET 流式端点：query 参数 + 命名事件。"""
+    app = create_app(app_settings)
+    app.state.llm_client = FakeLLM([LLMResponse(content="流式回答", tool_calls=[])])
+    with TestClient(app) as client:
+        resp = client.get(
+            "/api/agent/chat-stream",
+            params={"query": "你好", "max_iterations": 6},
+        )
+    assert resp.status_code == 200
+    assert "text/event-stream" in resp.headers["content-type"]
+    assert "event: message" in resp.text
+    assert "流式回答" in resp.text
+    assert "event: done" in resp.text
+
+
+def test_sse_agent_get_stream_requires_query(app_settings):
+    app = create_app(app_settings)
+    app.state.llm_client = FakeLLM([LLMResponse(content="", tool_calls=[])])
+    with TestClient(app) as client:
+        resp = client.get("/api/agent/chat-stream")
+    assert resp.status_code == 422

@@ -266,6 +266,37 @@ def test_translate_pdf_not_ready_returns_409(app_settings, tmp_path):
     assert resp.status_code == 409
 
 
+def test_translate_pdf_get_stream_endpoint(app_settings, tmp_path):
+    """EventSource 使用的 GET 翻译流式端点。"""
+    pdf_path = tmp_path / "stream.pdf"
+    _make_multipage_pdf(
+        pdf_path,
+        [
+            "First paragraph. " * 40,
+            "Second paragraph. " * 40,
+        ],
+    )
+    app = create_app(app_settings)
+    app.state.embedding_service = FakeEmbeddingService()
+    app.state.translation_service = FakeTranslation()
+    with TestClient(app) as client:
+        with open(pdf_path, "rb") as handle:
+            uploaded = client.post(
+                "/api/pdf/upload",
+                files={"file": ("stream.pdf", handle, "application/pdf")},
+            )
+        pdf_id = uploaded.json()["pdf_id"]
+        resp = client.get(
+            f"/api/pdf/{pdf_id}/translate-stream",
+            params={"target_lang": "zh", "max_paragraphs": 1},
+        )
+    assert resp.status_code == 200
+    assert "text/event-stream" in resp.headers["content-type"]
+    assert "event: progress" in resp.text
+    assert "event: segment" in resp.text
+    assert "event: done" in resp.text
+
+
 def test_translate_pdf_reports_llm_error(app_settings, tmp_path):
     class FailingTranslation:
         async def translate_paragraph(self, text, target_lang="zh"):

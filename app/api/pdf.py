@@ -2,17 +2,17 @@
 
 from __future__ import annotations
 
-import json
 from typing import Annotated
 from uuid import uuid4
 
 import aiofiles
 import httpx
-from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
+from fastapi import APIRouter, Depends, File, HTTPException, Query, Request, UploadFile
 from fastapi.responses import FileResponse, StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.concurrency import run_in_threadpool
 
+from app.api.sse import sse_response
 from app.core.database import get_db
 from app.models.uploaded_pdf import UploadedPDF
 from app.schemas.pdf import PDFImportRequest, PDFUploadResponse, TranslateRequest
@@ -159,23 +159,39 @@ async def translate_pdf(
     if row.status != "ready":
         raise HTTPException(status_code=409, detail="论文尚未处理完成，请稍后重试")
 
+    return sse_response(
+        _pdf_translate_events(request, row.file_path, payload)
+    )
+
+
+@router.get("/{pdf_id}/translate-stream")
+async def translate_pdf_stream(
+    pdf_id: int,
+    request: Request,
+    session: Annotated[AsyncSession, Depends(get_db)],
+    target_lang: str = Query(default="zh", max_length=16),
+    max_paragraphs: int = Query(default=0, ge=0, le=500),
+):
+    """EventSource 使用的 GET 翻译流式端点。"""
+    row = await session.get(UploadedPDF, pdf_id)
+    if row is None:
+        raise HTTPException(status_code=404, detail="论文不存在")
+    if row.status != "ready":
+        raise HTTPException(status_code=409, detail="论文尚未处理完成，请稍后重试")
+    payload = TranslateRequest(
+        target_lang=target_lang,
+        max_paragraphs=max_paragraphs,
+    )
+    return sse_response(_pdf_translate_events(request, row.file_path, payload))
+
+
+async def _pdf_translate_events(request: Request, file_path: str, payload: TranslateRequest):
     pdf_service = request.app.state.pdf_service
     translation = request.app.state.translation_service
-
-    async def event_stream():
-        async for event in _translate_events(
-            pdf_service, translation, row.file_path, payload
-        ):
-            yield (
-                f"event: {event['type']}\n"
-                f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
-            )
-
-    return StreamingResponse(
-        event_stream(),
-        media_type="text/event-stream",
-        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
-    )
+    async for event in _translate_events(
+        pdf_service, translation, file_path, payload
+    ):
+        yield event
 
 
 async def _translate_events(

@@ -1,5 +1,6 @@
-// 回归测试：对话回复必须实时渲染到 DOM（无需离开/重新进入会话）。
-// 拦截 /api/agent/chat 返回确定性 SSE，避免依赖真实 LLM；同时覆盖
+// 回归测试：对话回复必须实时渲染到 DOM（无需离开/重新进入会话），
+// 且 EventSource 流式 + 工具状态反馈正常。
+// 拦截 /api/agent/chat-stream 返回确定性 SSE，避免依赖真实 LLM；同时覆盖
 // 「普通浏览器」与「WebView2（pywebview 桌面窗口）模拟」两种环境。
 //
 // 用法：
@@ -18,9 +19,11 @@ const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 const EXPECTED_REPLY = "回复第一段内容。回复第二段内容。";
 const FAKE_SSE =
   [
+    'event: tool_call\ndata: {"type":"tool_call","name":"search_arxiv","arguments":{}}',
+    'event: tool_result\ndata: {"type":"tool_result","name":"search_arxiv","content":"[{\\"title\\":\\"Paper A\\"},{\\"title\\":\\"Paper B\\"}]"}',
     'event: message\ndata: {"type":"message","content":"回复第一段内容。"}',
     'event: message\ndata: {"type":"message","content":"回复第二段内容。"}',
-    'event: done\ndata: {"type":"done","content":""}',
+    'event: done\ndata: {"type":"done"}',
   ].join("\n\n") + "\n\n";
 
 async function run() {
@@ -58,7 +61,7 @@ async function run() {
 
     await page.setRequestInterception(true);
     page.on("request", (req) => {
-      if (req.url().includes("/api/agent/chat")) {
+      if (req.url().includes("/api/agent/chat-stream")) {
         req.respond({
           status: 200,
           contentType: "text/event-stream",
@@ -67,10 +70,20 @@ async function run() {
         });
         return;
       }
+      if (req.url().includes("/api/agent/chat")) {
+        // 旧 POST 端点不应再被前端调用
+        req.respond({
+          status: 501,
+          contentType: "application/json",
+          body: JSON.stringify({ detail: "obsolete endpoint" }),
+        });
+        return;
+      }
       req.continue();
     });
 
     await page.goto(baseUrl + "/", { waitUntil: "networkidle2", timeout: 20000 });
+    await page.evaluate(() => localStorage.setItem("sm_auto_save", "0"));
     await page.type(
       'input[type="text"][placeholder*="输入问题"]',
       "测试消息",
@@ -84,6 +97,24 @@ async function run() {
         m.textContent.trim(),
       ),
     );
+    const feedbackState = await page.evaluate(() => {
+      const tags = Array.from(document.querySelectorAll(".tool-tag")).map((t) =>
+        t.textContent.trim(),
+      );
+      const lastAssistant = Array.from(
+        document.querySelectorAll(".chat-msg.assistant"),
+      ).pop();
+      const status = lastAssistant
+        ? lastAssistant.querySelector(".msg-status")
+        : null;
+      return {
+        toolTags: tags,
+        statusVisible:
+          status !== null &&
+          status.getAttribute("style") !== null &&
+          !status.getAttribute("style").includes("display: none"),
+      };
+    });
 
     const convData = await page.evaluate(async () => {
       const resp = await fetch("/api/conversations");
@@ -119,6 +150,12 @@ async function run() {
       failures.push(
         "回复未实时渲染到 DOM（当前消息: " + JSON.stringify(domTexts) + "）",
       );
+    }
+    if (!feedbackState.toolTags.includes("search_arxiv")) {
+      failures.push("工具状态标签未渲染: " + JSON.stringify(feedbackState.toolTags));
+    }
+    if (feedbackState.statusVisible) {
+      failures.push("完成后状态反馈未收起");
     }
     const savedAssistant = (convData.messages || []).filter(
       (m) => m.role === "assistant" && m.content.includes(EXPECTED_REPLY),

@@ -16,6 +16,11 @@
 
       <template x-for="(m, i) in messages" :key="i">
         <div class="chat-msg" :class="m.role">
+          <div class="msg-status" :class="'phase-' + (m.phase || 'idle')"
+               x-show="m.phase === 'thinking' || m.phase === 'tool' || m.phase === 'error'">
+            <span class="spinner" x-show="m.phase !== 'error'"></span>
+            <span x-text="m.statusText"></span>
+          </div>
           <div class="msg-body" x-show="m.content" x-text="m.content"></div>
           <div class="msg-tools" x-show="m.tools && m.tools.length">
             <template x-for="(t, ti) in m.tools" :key="ti">
@@ -50,7 +55,8 @@
       <button type="button" class="attach" @click="$refs.file.click()" title="上传 PDF 翻译">📎</button>
       <input type="file" x-ref="file" accept="application/pdf" hidden @change="attachPdf($event)">
       <input type="text" x-model="draft" placeholder="输入问题，或上传 PDF 进行翻译…" :disabled="busy" autocomplete="off">
-      <button type="submit" :disabled="busy || !draft.trim()">发送</button>
+      <button type="submit" :disabled="busy || !draft.trim()"
+              x-text="busy ? '生成中…' : '发送'">发送</button>
     </form>
   </div>
 </section>

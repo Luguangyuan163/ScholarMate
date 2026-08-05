@@ -47,11 +47,21 @@ const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
   await page.click('button[type="submit"]');
   const deadline = Date.now() + 30000;
   let replyText = "";
+  let statusSeen = false;
   while (Date.now() < deadline) {
     replyText = await page.$$eval(
       ".chat-msg",
       (els) => (els.length > 1 ? els[els.length - 1].textContent.trim() : ""),
     );
+    const statusVisible = await page.evaluate(() => {
+      const el = document.querySelector(".chat-msg.assistant .msg-status");
+      return (
+        el !== null &&
+        (!el.getAttribute("style") ||
+          !el.getAttribute("style").includes("display: none"))
+      );
+    });
+    if (statusVisible) statusSeen = true;
     if (replyText) break;
     await sleep(500);
   }
@@ -62,6 +72,7 @@ const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
   if (buttonDisabled) failures.push("发送按钮在输入后仍为禁用状态");
   if (messageCount < 2) failures.push(`消息未发送（仅 ${messageCount} 条）`);
   if (!replyText) failures.push("AI 回复内容未实时渲染到界面（重进会话才显示的回归）");
+  if (!statusSeen) failures.push("等待期间未显示思考/检索状态反馈");
 
   console.log(
     failures.length
