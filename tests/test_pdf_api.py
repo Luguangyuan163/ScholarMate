@@ -596,3 +596,36 @@ def test_get_pdf_file_missing_returns_404(app_settings):
     with TestClient(app) as client:
         resp = client.get("/api/pdf/999/file")
     assert resp.status_code == 404
+
+
+def test_get_pdf_page_image(app_settings, tmp_path):
+    """原文预览：按页渲染 PDF 为 PNG，保留原始排版供对照阅读。"""
+    pdf_path = tmp_path / "pages.pdf"
+    _make_multipage_pdf(
+        pdf_path,
+        [
+            "First page content with layout. " * 60,
+            "Second page content with layout. " * 60,
+        ],
+    )
+    app = create_app(app_settings)
+    app.state.embedding_service = FakeEmbeddingService()
+    with TestClient(app) as client:
+        with open(pdf_path, "rb") as handle:
+            uploaded = client.post(
+                "/api/pdf/upload",
+                files={"file": ("pages.pdf", handle, "application/pdf")},
+            )
+        pdf_id = uploaded.json()["pdf_id"]
+
+        resp = client.get(f"/api/pdf/{pdf_id}/pages/1/image")
+        assert resp.status_code == 200
+        assert resp.headers["content-type"] == "image/png"
+        assert resp.content.startswith(b"\x89PNG")
+        assert resp.headers.get("x-total-pages") == "2"
+
+        out_of_range = client.get(f"/api/pdf/{pdf_id}/pages/99/image")
+        assert out_of_range.status_code == 404
+
+        missing = client.get("/api/pdf/999/pages/1/image")
+        assert missing.status_code == 404

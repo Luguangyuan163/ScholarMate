@@ -50,6 +50,9 @@
     <header class="translate-head">
       <button class="btn btn-sm btn-outline" type="button" @click="closeTranslation()">← 返回对话</button>
       <h2 x-text="translation.pdfName ? '对照翻译：' + translation.pdfName : 'PDF 对照翻译'"></h2>
+      <button class="btn btn-sm btn-outline preview-toggle" type="button"
+              @click="togglePreview()" :disabled="!translation.pdfId"
+              x-text="translation.previewOpen ? '收起原文' : '原文 PDF'">原文 PDF</button>
     </header>
 
     <div class="card translate-controls">
@@ -117,6 +120,22 @@
       </div>
       <p class="placeholder" x-show="!translation.records.length">暂无翻译记录。</p>
     </div>
+
+    <aside class="translate-preview" x-show="translation.previewOpen">
+      <div class="preview-head">
+        <span>原文 PDF（保留原始排版）</span>
+        <span class="preview-count" x-text="'共 ' + translation.pageCount + ' 页'"></span>
+      </div>
+      <div class="preview-pages">
+        <template x-for="n in previewPageList()" :key="n">
+          <figure class="preview-page">
+            <img :src="'/api/pdf/' + translation.pdfId + '/pages/' + n + '/image?scale=2'"
+                 loading="lazy" :alt="'原文第 ' + n + ' 页'">
+            <figcaption x-text="'第 ' + n + ' 页'"></figcaption>
+          </figure>
+        </template>
+      </div>
+    </aside>
   </div>
 </section>
 {% endblock %}

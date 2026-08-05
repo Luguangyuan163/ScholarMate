@@ -19,6 +19,8 @@ window.chatApp = function () {
       status: "",
       uploadStatus: "",
       maxParagraphs: 0,
+      pageCount: 0,
+      previewOpen: false,
       busy: false,
       source: null,
     },
@@ -306,6 +308,11 @@ window.chatApp = function () {
       this.translation.selectedPdf = String(pdfId);
       this.translation.segments = [];
       this.translation.status = "";
+      this.translation.previewOpen = false;
+      const meta = this.translation.papers.find(
+        (p) => String(p.id) === String(pdfId),
+      );
+      this.translation.pageCount = meta ? meta.page_count || 0 : 0;
       await this.loadTranslationRecords();
       const saved = this.translation.records.find(
         (r) => String(r.pdf_id) === String(pdfId),
@@ -325,6 +332,7 @@ window.chatApp = function () {
       this.translation.segments = [];
       this.translation.status = "";
       this.translation.uploadStatus = "";
+      this.translation.previewOpen = false;
       this.view = "chat";
     },
 
@@ -394,8 +402,42 @@ window.chatApp = function () {
         translation: seg.translation,
       }));
       this.translation.pdfName = data.filename;
+      if (!this.translation.pdfId) {
+        this.translation.pdfId = record.pdf_id;
+        await this.loadTranslationPapers();
+        const meta = this.translation.papers.find(
+          (p) => String(p.id) === String(record.pdf_id),
+        );
+        this.translation.pageCount = meta ? meta.page_count || 0 : 0;
+      }
       this.translation.status =
         "已加载保存的翻译版本（" + (data.created_at || "").slice(0, 16) + "）";
+    },
+
+    async togglePreview() {
+      if (this.translation.previewOpen) {
+        this.translation.previewOpen = false;
+        return;
+      }
+      if (!this.translation.pdfId) return;
+      let tries = 0;
+      while (!this.translation.pageCount && tries < 10) {
+        await this.loadTranslationPapers();
+        const meta = this.translation.papers.find(
+          (p) => String(p.id) === String(this.translation.pdfId),
+        );
+        this.translation.pageCount = meta ? meta.page_count || 0 : 0;
+        if (!this.translation.pageCount) {
+          await new Promise((resolve) => setTimeout(resolve, 500));
+          tries += 1;
+        }
+      }
+      this.translation.previewOpen = true;
+    },
+
+    previewPageList() {
+      const count = this.translation.pageCount || 0;
+      return Array.from({ length: count }, (_, i) => i + 1);
     },
 
     async deleteRecord(record) {

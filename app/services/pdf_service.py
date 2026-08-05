@@ -26,6 +26,25 @@ class PDFService:
                 text=_normalize_text("\n".join(pages)), page_count=len(pages)
             )
 
+    def page_count(self, pdf_path: str) -> int:
+        """返回 PDF 总页数。"""
+        with fitz.open(pdf_path) as doc:
+            return doc.page_count
+
+    def render_page(
+        self,
+        pdf_path: str,
+        page_index: int,
+        scale: float = 2.0,
+    ) -> bytes:
+        """将指定页渲染为 PNG，保留原始排版；页码越界抛 IndexError。"""
+        with fitz.open(pdf_path) as doc:
+            if page_index < 0 or page_index >= doc.page_count:
+                raise IndexError(f"page {page_index} out of range")
+            page = doc.load_page(page_index)
+            pixmap = page.get_pixmap(matrix=fitz.Matrix(scale, scale))
+            return pixmap.tobytes("png")
+
     def chunk_paragraphs(self, text: str, max_chars: int = 800) -> list[str]:
         """按段落累积分块，每块不超过 max_chars 字符。"""
         paragraphs = [p.strip() for p in text.split("\n\n") if p.strip()]

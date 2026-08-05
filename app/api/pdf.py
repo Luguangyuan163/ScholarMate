@@ -12,7 +12,7 @@ from uuid import uuid4
 
 import aiofiles
 import httpx
-from fastapi import APIRouter, Depends, File, HTTPException, Query, Request, UploadFile
+from fastapi import APIRouter, Depends, File, HTTPException, Query, Request, Response, UploadFile
 from fastapi.responses import FileResponse, StreamingResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -151,6 +151,10 @@ async def _process_pdf_background(
     try:
         result = await run_in_threadpool(pdf_service.extract, path)
         chunks = pdf_service.chunk_paragraphs(result.text)
+        async with db.session_factory() as session:
+            row = await session.get(UploadedPDF, pdf_id)
+            row.page_count = result.page_count
+            await session.commit()
 
         def _report(done: int, total: int) -> None:
             progress[pdf_id] = {"stage": "embedding", "done": done, "total": total}
@@ -162,7 +166,6 @@ async def _process_pdf_background(
         async with db.session_factory() as session:
             row = await session.get(UploadedPDF, pdf_id)
             row.status = "ready"
-            row.page_count = result.page_count
             await session.commit()
         progress[pdf_id] = {"stage": "done", "done": len(chunks), "total": len(chunks)}
     except Exception as exc:
@@ -208,6 +211,38 @@ async def download_pdf_file(
         media_type="application/pdf",
         filename=row.original_name,
         content_disposition_type="inline",
+    )
+
+
+@router.get("/{pdf_id}/pages/{page_number}/image")
+async def pdf_page_image(
+    pdf_id: int,
+    page_number: int,
+    request: Request,
+    session: Annotated[AsyncSession, Depends(get_db)],
+    scale: float = Query(default=2.0, ge=1.0, le=4.0),
+) -> Response:
+    """按页渲染原 PDF 为 PNG（保留排版），供对照翻译的原文预览使用。"""
+    row = await session.get(UploadedPDF, pdf_id)
+    if row is None:
+        raise HTTPException(status_code=404, detail="论文不存在")
+    pdf_service = request.app.state.pdf_service
+    try:
+        png = await run_in_threadpool(
+            pdf_service.render_page, row.file_path, page_number - 1, scale
+        )
+        total_pages = row.page_count or await run_in_threadpool(
+            pdf_service.page_count, row.file_path
+        )
+    except (IndexError, OSError) as exc:
+        raise HTTPException(status_code=404, detail="PDF 页面不可用") from exc
+    return Response(
+        content=png,
+        media_type="image/png",
+        headers={
+            "Cache-Control": "public, max-age=3600",
+            "X-Total-Pages": str(total_pages),
+        },
     )
 
 
