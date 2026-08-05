@@ -56,7 +56,7 @@ window.appSidebar = function () {
           return;
         }
         const data = await resp.json();
-        window.location.href = "/agent?pdf=" + data.pdf_id;
+        window.location.href = "/translate?pdf=" + data.pdf_id;
       } catch (err) {
         alert("上传失败: " + err.message);
       } finally {

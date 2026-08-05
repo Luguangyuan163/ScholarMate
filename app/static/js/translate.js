@@ -6,11 +6,13 @@ window.translateApp = function () {
     maxParagraphs: 20,
     selectedPdf: "",
     papers: [],
+    records: [],
     segments: [],
     status: "",
 
     async init() {
       await this.loadPapers();
+      await this.loadRecords();
       const params = new URLSearchParams(window.location.search);
       const pdf = params.get("pdf");
       if (pdf && this.papers.some((p) => String(p.id) === pdf)) {
@@ -22,6 +24,34 @@ window.translateApp = function () {
     async loadPapers() {
       const resp = await fetch("/api/papers");
       if (resp.ok) this.papers = await resp.json();
+    },
+
+    async loadRecords() {
+      const resp = await fetch("/api/translations");
+      if (resp.ok) this.records = await resp.json();
+    },
+
+    async viewRecord(record) {
+      const resp = await fetch("/api/translations/" + record.id);
+      if (!resp.ok) return;
+      const data = await resp.json();
+      this.segments = data.segments;
+      this.status =
+        "已加载保存的翻译版本（" + (data.created_at || "").slice(0, 16) + "）";
+    },
+
+    async removeRecord(record) {
+      if (!confirm("确定删除该翻译记录？")) return;
+      const resp = await fetch("/api/translations/" + record.id, {
+        method: "DELETE",
+      });
+      if (resp.ok) {
+        this.records = this.records.filter((r) => r.id !== record.id);
+        this.segments = [];
+        this.status = "";
+      } else {
+        alert("删除失败: HTTP " + resp.status);
+      }
     },
 
     async uploadAndTranslate(event) {
@@ -42,6 +72,7 @@ window.translateApp = function () {
         }
         const data = await resp.json();
         await this.translatePdf(data.pdf_id);
+        await this.loadRecords();
       } catch (err) {
         this.status = "错误: " + err.message;
       } finally {
@@ -51,6 +82,18 @@ window.translateApp = function () {
     },
 
     async translateSelected() {
+      if (!this.selectedPdf || this.busy) return;
+      const saved = this.records.find(
+        (r) => String(r.pdf_id) === this.selectedPdf,
+      );
+      if (saved) {
+        await this.viewRecord(saved);
+        return;
+      }
+      await this.forceTranslate();
+    },
+
+    async forceTranslate() {
       if (!this.selectedPdf || this.busy) return;
       this.busy = true;
       this.segments = [];
@@ -88,6 +131,7 @@ window.translateApp = function () {
       source.addEventListener("done", (event) => {
         this.handleEvent("done", event.data);
         close();
+        this.loadRecords();
       });
       source.onerror = () => {
         if (finished) return;

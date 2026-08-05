@@ -13,7 +13,7 @@ window.chatApp = function () {
       const conv = params.get("conv");
       const pdf = params.get("pdf");
       if (conv) await this.loadConversation(Number(conv));
-      if (pdf) await this.attachPdfById(Number(pdf));
+      if (pdf) window.location.href = "/translate?pdf=" + pdf;
     },
 
     async loadConversation(id) {
@@ -249,112 +249,21 @@ window.chatApp = function () {
         return;
       }
       this.busy = true;
-      const msg = this.pushMessage({
-        role: "user",
-        content: "📎 " + file.name,
-        pdf: { filename: file.name, status: "上传中…", segments: [] },
-      });
       try {
         const form = new FormData();
         form.append("file", file);
         const resp = await fetch("/api/pdf/upload", { method: "POST", body: form });
         if (!resp.ok) {
           const body = await resp.json().catch(() => ({}));
-          msg.pdf.status = "上传失败: " + (body.detail || ("HTTP " + resp.status));
+          alert("上传失败: " + (body.detail || ("HTTP " + resp.status)));
           return;
         }
         const data = await resp.json();
-        msg.pdf.pdfId = data.pdf_id;
-        await this.translatePdf(msg);
+        window.location.href = "/translate?pdf=" + data.pdf_id;
       } catch (err) {
-        msg.pdf.status = "上传失败: " + err.message;
+        alert("上传失败: " + err.message);
       } finally {
         this.busy = false;
-        this.scrollToBottom();
-      }
-    },
-
-    async attachPdfById(pdfId) {
-      if (this.busy) return;
-      this.busy = true;
-      const resp = await fetch("/api/papers");
-      const papers = resp.ok ? await resp.json() : [];
-      const meta = papers.find((p) => p.id === pdfId);
-      const msg = this.pushMessage({
-        role: "user",
-        content: "📎 " + (meta ? meta.filename : "PDF #" + pdfId),
-        pdf: {
-          filename: meta ? meta.filename : "PDF",
-          status: "准备翻译…",
-          segments: [],
-        },
-      });
-      try {
-        await this.translatePdf(msg, pdfId);
-      } finally {
-        this.busy = false;
-        this.scrollToBottom();
-      }
-    },
-
-    async translatePdf(msg, pdfIdOverride) {
-      const pdfId = pdfIdOverride || msg.pdf.pdfId;
-      msg.pdf.status = "准备翻译…";
-      const params = new URLSearchParams({
-        target_lang: "zh",
-        max_paragraphs: "20",
-      });
-      const source = new EventSource(
-        "/api/pdf/" + pdfId + "/translate-stream?" + params,
-      );
-      let finished = false;
-      const close = () => {
-        if (finished) return;
-        finished = true;
-        source.close();
-      };
-      source.addEventListener("progress", (event) =>
-        this.handlePdfEvent("progress", event.data, msg),
-      );
-      source.addEventListener("segment", (event) =>
-        this.handlePdfEvent("segment", event.data, msg),
-      );
-      source.addEventListener("error", (event) =>
-        this.handlePdfEvent("error", event.data, msg),
-      );
-      source.addEventListener("done", (event) => {
-        this.handlePdfEvent("done", event.data, msg);
-        close();
-      });
-      source.onerror = () => {
-        if (finished) return;
-        close();
-        if (msg.pdf.status && !msg.pdf.status.includes("完成")) {
-          msg.pdf.status = "翻译连接中断，请重试";
-        }
-      };
-    },
-
-    handlePdfEvent(type, raw, msg) {
-      let payload;
-      try {
-        payload = JSON.parse(raw);
-      } catch {
-        return;
-      }
-      if (type === "progress") {
-        msg.pdf.status = "翻译中… " + payload.done + "/" + payload.total;
-      } else if (type === "segment") {
-        msg.pdf.segments.push({
-          source: payload.source,
-          translation: payload.translation,
-        });
-        msg.pdf.status = "翻译中… " + (payload.index + 1) + "/" + payload.total;
-        this.scrollToBottom();
-      } else if (type === "done") {
-        msg.pdf.status = "翻译完成（" + payload.total + " 段）";
-      } else if (type === "error") {
-        msg.pdf.status = "错误: " + payload.content;
       }
     },
 

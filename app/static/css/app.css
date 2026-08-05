@@ -388,6 +388,26 @@ input[type="file"] { font: inherit; color: var(--ink-soft); }
   font-size: 13px;
   padding: 10px 2px;
 }
+.translate-history { margin-top: 22px; }
+.history-head {
+  font-family: var(--serif);
+  font-size: 18px;
+  margin: 0 0 4px;
+}
+.history-list { margin-top: 10px; }
+.history-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 4px;
+  border-bottom: 1px dashed var(--line);
+}
+.history-item:last-child { border-bottom: 0; }
+.history-meta { min-width: 0; }
+.history-name { font-weight: 600; color: var(--ink); word-break: break-all; }
+.history-info { color: var(--muted); font-size: 12px; margin-left: 6px; }
+.history-actions { display: flex; gap: 8px; flex: none; }
 .segments { margin-top: 10px; }
 .segment {
   position: relative;
@@ -681,29 +701,6 @@ input[type="file"] { font: inherit; color: var(--ink-soft); }
   background: var(--accent-soft);
   color: var(--accent);
 }
-.msg-pdf {
-  margin-top: 10px;
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
-  background: var(--card);
-  overflow: hidden;
-}
-.msg-pdf-head {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 10px 14px;
-  background: var(--card-soft);
-  font-size: 13px;
-  font-weight: 600;
-}
-.msg-pdf-head .pdf-status { color: var(--muted); font-family: var(--mono); font-size: 11px; }
-.msg-pdf-body { max-height: 340px; overflow-y: auto; padding: 10px 14px; }
-.msg-pdf-seg { padding: 8px 0; border-bottom: 1px dashed var(--line); }
-.msg-pdf-seg:last-child { border-bottom: 0; }
-.msg-pdf-src { font-size: 13px; color: var(--ink); line-height: 1.6; }
-.msg-pdf-trans { font-size: 13px; color: var(--accent-deep); line-height: 1.6; margin-top: 4px; }
-
 .save-bar {
   display: flex;
   align-items: center;

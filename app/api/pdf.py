@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from typing import Annotated
 from uuid import uuid4
 
@@ -14,6 +15,7 @@ from starlette.concurrency import run_in_threadpool
 
 from app.api.sse import sse_response
 from app.core.database import get_db
+from app.models.translation_record import TranslationRecord
 from app.models.uploaded_pdf import UploadedPDF
 from app.schemas.pdf import PDFImportRequest, PDFUploadResponse, TranslateRequest
 
@@ -160,7 +162,7 @@ async def translate_pdf(
         raise HTTPException(status_code=409, detail="论文尚未处理完成，请稍后重试")
 
     return sse_response(
-        _pdf_translate_events(request, row.file_path, payload)
+        _pdf_translate_events(request, row, payload)
     )
 
 
@@ -182,37 +184,40 @@ async def translate_pdf_stream(
         target_lang=target_lang,
         max_paragraphs=max_paragraphs,
     )
-    return sse_response(_pdf_translate_events(request, row.file_path, payload))
+    return sse_response(_pdf_translate_events(request, row, payload))
 
 
-async def _pdf_translate_events(request: Request, file_path: str, payload: TranslateRequest):
+async def _pdf_translate_events(request: Request, row, payload: TranslateRequest):
     pdf_service = request.app.state.pdf_service
     translation = request.app.state.translation_service
     async for event in _translate_events(
-        pdf_service, translation, file_path, payload
+        request, pdf_service, translation, row, payload
     ):
         yield event
 
 
 async def _translate_events(
+    request: Request,
     pdf_service,
     translation,
-    file_path: str,
+    row,
     payload: TranslateRequest,
 ):
     """提取全文 → 分块 → 逐段翻译，产出 SSE 事件（progress/segment/done/error）。"""
-    result = await run_in_threadpool(pdf_service.extract, file_path)
+    result = await run_in_threadpool(pdf_service.extract, row.file_path)
     chunks = pdf_service.chunk_paragraphs(result.text, max_chars=TRANSLATE_CHUNK_CHARS)
     if payload.max_paragraphs > 0:
         chunks = chunks[: payload.max_paragraphs]
     total = len(chunks)
     yield {"type": "progress", "done": 0, "total": total}
+    segments = []
     for index, chunk in enumerate(chunks):
         try:
             translated = await translation.translate_paragraph(chunk, payload.target_lang)
         except Exception as exc:
             yield {"type": "error", "content": f"第 {index + 1} 段翻译失败: {exc}"}
             return
+        segments.append({"source": chunk, "translation": translated})
         yield {
             "type": "segment",
             "index": index,
@@ -220,4 +225,21 @@ async def _translate_events(
             "translation": translated,
             "total": total,
         }
+    await _save_translation(request, row, payload.target_lang, segments)
     yield {"type": "done", "total": total}
+
+
+async def _save_translation(request: Request, row, target_lang: str, segments: list) -> None:
+    """翻译完成后持久化版本，供后续对照查看。"""
+    db = request.app.state.database
+    async with db.session_factory() as session:
+        session.add(
+            TranslationRecord(
+                pdf_id=row.id,
+                filename=row.original_name,
+                target_lang=target_lang,
+                segments_json=json.dumps(segments, ensure_ascii=False),
+                total=len(segments),
+            )
+        )
+        await session.commit()

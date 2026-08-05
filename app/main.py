@@ -12,7 +12,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
 import app.models  # noqa: F401  确保 ORM 模型注册到 Base.metadata
-from app.api import agent, conversations, papers, pdf, search
+from app.api import agent, conversations, papers, pdf, search, translations
 from app.config import Settings
 from app.core.database import Database
 from app.core.llm_client import get_llm_client
@@ -107,4 +107,5 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(conversations.router)
     app.include_router(pdf.router)
     app.include_router(papers.router)
+    app.include_router(translations.router)
     return app

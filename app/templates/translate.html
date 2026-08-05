@@ -4,7 +4,7 @@
 <section x-data="translateApp()" class="translate-page">
   <header class="page-head">
     <h2>PDF 翻译</h2>
-    <p class="hint">上传论文 PDF，或从论文库选择已处理完成的论文，逐段翻译并双语对照阅读。</p>
+    <p class="hint">上传论文 PDF，或从论文库选择已处理完成的论文，逐段对照阅读；翻译完成会自动保存版本，随时回来查看。</p>
   </header>
 
   <div class="card translate-controls">
@@ -33,6 +33,8 @@
           </template>
         </select>
       </label>
+      <button class="btn btn-sm btn-outline" type="button" @click="forceTranslate()"
+              :disabled="busy || !selectedPdf">重新翻译</button>
     </div>
   </div>
 
@@ -49,6 +51,27 @@
       </div>
     </template>
     <div class="placeholder" x-show="!segments.length && !busy && !status">上传 PDF 后，双语对照将显示在这里。</div>
+  </div>
+
+  <div class="card translate-history">
+    <h3 class="history-head">翻译记录</h3>
+    <p class="hint">已完成的翻译保存在这里，可随时打开对照查看。</p>
+    <div class="history-list">
+      <template x-for="r in records" :key="r.id">
+        <div class="history-item">
+          <div class="history-meta">
+            <span class="history-name" x-text="r.filename"></span>
+            <span class="history-info"
+                  x-text="'· ' + r.target_lang + ' · ' + r.total + ' 段 · ' + (r.created_at || '').slice(0, 16)"></span>
+          </div>
+          <div class="history-actions">
+            <button class="btn btn-sm btn-outline" type="button" @click="viewRecord(r)">查看</button>
+            <button class="btn btn-sm btn-danger" type="button" @click="removeRecord(r)">删除</button>
+          </div>
+        </div>
+      </template>
+    </div>
+    <p class="placeholder" x-show="!records.length">暂无翻译记录。</p>
   </div>
 </section>
 {% endblock %}
