@@ -1,8 +1,38 @@
 {% extends "base.html" %}
 {% block title %}论文库 - {{ app_title }}{% endblock %}
 {% block content %}
-<section class="placeholder">
-  <h2>论文库管理</h2>
-  <p>已保存论文的浏览与删除将在 P2 实现。</p>
+<section class="library" x-data="libraryApp()" x-init="init()">
+  <header class="page-head">
+    <h2>论文库</h2>
+    <p class="hint">已上传并完成处理的论文，可直接发起翻译或用于本地语义检索。</p>
+  </header>
+
+  <div class="library-actions">
+    <a class="btn" href="/translate">上传并翻译</a>
+  </div>
+
+  <div class="library-empty" x-show="!loading && !papers.length">
+    <p>还没有论文。去<a href="/translate">翻译页</a>上传第一篇 PDF 吧。</p>
+  </div>
+
+  <ul class="paper-list" x-show="papers.length">
+    <template x-for="(p, i) in papers" :key="p.id">
+      <li class="paper-card library-item">
+        <span class="cite-index" x-text="'[' + (i + 1) + ']'"></span>
+        <div class="paper-card-body">
+          <h3 x-text="p.filename"></h3>
+          <p class="meta">
+            <span class="tag" :class="'tag-' + p.status" x-text="statusText(p.status)"></span>
+            <span x-text="'共 ' + p.page_count + ' 页'"></span>
+            <span x-text="'· ' + (p.created_at ? p.created_at.slice(0, 10) : '')"></span>
+          </p>
+        </div>
+        <div class="paper-card-actions">
+          <a class="btn btn-sm btn-outline" :href="'/translate?pdf=' + p.id">翻译</a>
+          <button class="btn btn-sm btn-danger" @click="remove(p)" :disabled="busy">删除</button>
+        </div>
+      </li>
+    </template>
+  </ul>
 </section>
 {% endblock %}

@@ -11,6 +11,12 @@ window.translateApp = function () {
 
     async init() {
       await this.loadPapers();
+      const params = new URLSearchParams(window.location.search);
+      const pdf = params.get("pdf");
+      if (pdf && this.papers.some((p) => String(p.id) === pdf)) {
+        this.selectedPdf = pdf;
+        await this.translateSelected();
+      }
     },
 
     async loadPapers() {

@@ -2,8 +2,10 @@
 {% block title %}PDF 翻译 - {{ app_title }}{% endblock %}
 {% block content %}
 <section x-data="translateApp()" class="translate-page">
-  <h2>PDF 翻译</h2>
-  <p class="hint">上传论文 PDF，或从论文库选择已处理完成的论文，逐段翻译并双语对照阅读。</p>
+  <header class="page-head">
+    <h2>PDF 翻译</h2>
+    <p class="hint">上传论文 PDF，或从论文库选择已处理完成的论文，逐段翻译并双语对照阅读。</p>
+  </header>
 
   <div class="card translate-controls">
     <form class="row" @submit.prevent="uploadAndTranslate($event)">
@@ -49,5 +51,4 @@
     <div class="placeholder" x-show="!segments.length && !busy && !status">上传 PDF 后，双语对照将显示在这里。</div>
   </div>
 </section>
-<script src="/static/js/translate.js" defer></script>
 {% endblock %}

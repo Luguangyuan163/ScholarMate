@@ -2,6 +2,10 @@
 {% block title %}Agent 对话 - {{ app_title }}{% endblock %}
 {% block content %}
 <section class="chat" x-data="chatApp()" x-init="init()">
+  <header class="page-head">
+    <h2>Agent 对话</h2>
+    <p class="hint">用自然语言检索论文、整理引用量或翻译摘要。</p>
+  </header>
   <div class="chat-log" id="chat-log" x-ref="log">
     <p class="chat-placeholder">
       向 ScholarMate 提问，例如：<br>

@@ -1,5 +1,12 @@
 <li class="paper-card">
-  <h3><a href="{{ item.url }}" target="_blank">{{ item.title }}</a></h3>
-  <p class="meta">{{ item.authors | join("、") }} · {{ item.year or "N/A" }} · 引用 {{ item.citation_count }}</p>
-  <p class="abstract">{{ item.abstract[:200] }}{% if item.abstract|length > 200 %}…{% endif %}</p>
+  <span class="cite-index">[{{ idx }}]</span>
+  <div>
+    <h3><a href="{{ item.url }}" target="_blank" rel="noopener">{{ item.title }}</a></h3>
+    <p class="meta">
+      <span class="tag tag-source">{{ item.source }}</span>
+      <span class="tag tag-cites">被引 {{ item.citation_count }}</span>
+      {{ item.authors | join("、") }} · {{ item.year or "N/A" }}
+    </p>
+    <p class="abstract">{{ item.abstract[:200] }}{% if item.abstract|length > 200 %}…{% endif %}</p>
+  </div>
 </li>

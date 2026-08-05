@@ -2,11 +2,17 @@
 {% block title %}论文检索 - {{ app_title }}{% endblock %}
 {% block content %}
 <section class="hero">
-  <h2>论文检索</h2>
-  <form hx-post="/api/search" hx-target="#results" hx-swap="innerHTML" hx-ext="json-enc">
+  <p class="kicker">ScholarMate · Academic Search</p>
+  <h2>检索论文</h2>
+  <form hx-post="/api/search" hx-target="#results" hx-swap="innerHTML" hx-ext="json-enc" x-data="{ source: 'arxiv' }">
     <input type="text" name="query" placeholder="输入关键词，例如 LoRA fine-tuning" required>
-    <input type="hidden" name="source" value="arxiv">
-    <button type="submit">搜索</button>
+    <input type="hidden" name="source" :value="source">
+    <button type="submit">检索</button>
+    <div class="source-switch">
+      <button type="button" class="tag" :class="{ 'selected': source === 'arxiv' }" @click="source = 'arxiv'">arXiv</button>
+      <button type="button" class="tag" :class="{ 'selected': source === 's2' }" @click="source = 's2'">Semantic Scholar</button>
+      <button type="button" class="tag" :class="{ 'selected': source === 'local' }" @click="source = 'local'">本地论文库</button>
+    </div>
   </form>
 </section>
 <div id="results"></div>

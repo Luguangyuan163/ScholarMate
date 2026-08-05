@@ -1,6 +1,7 @@
 {% if items %}
 <ul class="paper-list">
   {% for item in items %}
+    {% set idx = loop.index %}
     {% include "partials/paper_card.html" %}
   {% endfor %}
 </ul>

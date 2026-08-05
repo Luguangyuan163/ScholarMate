@@ -4,25 +4,32 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{% block title %}{{ app_title }}{% endblock %}</title>
+  <link rel="icon" href="/static/img/logo.svg" type="image/svg+xml">
   <link rel="stylesheet" href="/static/css/app.css">
-  <!-- 开发期使用 CDN；P5 打包前需将 HTMX / Alpine 下载到 static/vendor/ 实现离线 -->
-  <script src="https://unpkg.com/htmx.org@1.9.12" defer></script>
-  <script src="https://unpkg.com/htmx.org@1.9.12/dist/ext/json-enc.js" defer></script>
-  <script src="https://unpkg.com/alpinejs@3.14.1/dist/cdn.min.js" defer></script>
+  <script src="/static/vendor/htmx.min.js" defer></script>
+  <script src="/static/vendor/htmx-json-enc.js" defer></script>
+  <script src="/static/vendor/alpine.min.js" defer></script>
 </head>
 <body>
   <header class="topbar">
-    <h1>{{ app_title }}</h1>
-    <nav>
-      <a href="/">搜索</a>
-      <a href="/agent">Agent 对话</a>
-      <a href="/translate">翻译</a>
-      <a href="/papers">论文库</a>
+    <a class="brand" href="/">
+      <img class="brand-logo" src="/static/img/logo.svg" alt="">
+      <span class="brand-name">{{ app_title }}</span>
+      <span class="brand-sub">学术检索 · 翻译 · 智能助理</span>
+    </a>
+    <nav class="nav">
+      <a href="/" {% if request.url.path == "/" %}class="active"{% endif %}>检索</a>
+      <a href="/agent" {% if request.url.path == "/agent" %}class="active"{% endif %}>Agent 对话</a>
+      <a href="/translate" {% if request.url.path == "/translate" %}class="active"{% endif %}>翻译</a>
+      <a href="/papers" {% if request.url.path == "/papers" %}class="active"{% endif %}>论文库</a>
     </nav>
   </header>
   <main>
     {% block content %}{% endblock %}
   </main>
+  <footer class="footer">ScholarMate · 毕业设计 · 本地桌面应用</footer>
   <script src="/static/js/agent_chat.js" defer></script>
+  <script src="/static/js/translate.js" defer></script>
+  <script src="/static/js/papers.js" defer></script>
 </body>
 </html>

@@ -53,6 +53,9 @@ app/
   schemas/    # Pydantic 请求/响应
   templates/  # Jinja2 页面
   static/     # CSS / JS / 图片
+    css/      # 设计系统（学术手稿风）
+    js/       # 页面交互（对话 / 翻译 / 论文库）
+    vendor/   # 本地化 htmx / Alpine（离线可打包）
 tests/        # pytest 测试
 scripts/      # 初始化 / 演示数据 / LLM 连通性
 build/        # PyInstaller 打包配置
