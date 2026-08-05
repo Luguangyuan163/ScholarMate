@@ -629,3 +629,48 @@ def test_get_pdf_page_image(app_settings, tmp_path):
 
         missing = client.get("/api/pdf/999/pages/1/image")
         assert missing.status_code == 404
+
+
+def test_translate_skips_figure_and_table_text(app_settings, tmp_path):
+    """翻译不包含图表区域文字：图片内文字与表格单元格被过滤。"""
+    pdf_path = tmp_path / "figtable.pdf"
+    doc = fitz.open()
+    page = doc.new_page()
+    page.insert_text((72, 72), "Body paragraph that should be translated.")
+    pix = fitz.Pixmap(fitz.csRGB, fitz.IRect(0, 0, 200, 120))
+    pix.set_rect(fitz.IRect(0, 0, 200, 120), (230, 230, 230))
+    page.insert_image(fitz.Rect(72, 150, 400, 300), pixmap=pix)
+    page.insert_text((100, 200), "Axis label inside figure")
+    page.insert_text((72, 330), "Figure 1: caption below figure.")
+    x0, y0 = 72, 400
+    for i in range(3):
+        for j in range(2):
+            rect = fitz.Rect(
+                x0 + j * 120, y0 + i * 40, x0 + (j + 1) * 120, y0 + (i + 1) * 40
+            )
+            page.draw_rect(rect, color=(0, 0, 0), width=0.7)
+    page.insert_text((x0 + 10, y0 + 25), "Cell A")
+    page.insert_text((x0 + 130, y0 + 25), "Cell B")
+    page.insert_text((x0 + 10, y0 + 65), "Cell C")
+    doc.save(str(pdf_path))
+    doc.close()
+
+    app = create_app(app_settings)
+    app.state.embedding_service = FakeEmbeddingService()
+    app.state.translation_service = FakeTranslation()
+    with TestClient(app) as client:
+        with open(pdf_path, "rb") as handle:
+            uploaded = client.post(
+                "/api/pdf/upload",
+                files={"file": ("figtable.pdf", handle, "application/pdf")},
+            )
+        pdf_id = uploaded.json()["pdf_id"]
+        resp = client.post(
+            f"/api/pdf/{pdf_id}/translate",
+            json={"target_lang": "zh", "max_paragraphs": 0},
+        )
+    assert resp.status_code == 200
+    assert "Body paragraph" in resp.text
+    assert "Figure 1" in resp.text
+    assert "Axis label inside figure" not in resp.text
+    assert "Cell A" not in resp.text

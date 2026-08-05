@@ -121,7 +121,7 @@
       <p class="placeholder" x-show="!translation.records.length">暂无翻译记录。</p>
     </div>
 
-    <aside class="translate-preview" x-show="translation.previewOpen">
+    <aside class="translate-preview" :class="{ 'fullscreen': translation.previewFullscreen }" x-show="translation.previewOpen">
       <div class="preview-head">
         <span>原文 PDF（保留原始排版）</span>
         <span class="preview-count" x-text="'共 ' + translation.pageCount + ' 页'"></span>
@@ -135,6 +135,8 @@
                 :disabled="translation.previewZoom >= 3">放大</button>
         <button class="btn btn-sm btn-outline" type="button" @click="setPreviewZoom(1)"
                 :disabled="translation.previewZoom === 1">适应宽度</button>
+        <button class="btn btn-sm btn-outline" type="button" @click="togglePreviewFullscreen()"
+                x-text="translation.previewFullscreen ? '退出全屏' : '全屏'">全屏</button>
       </div>
       <p class="hint">提示：点击页面图片可在新窗口查看原图。</p>
       <div class="preview-pages">

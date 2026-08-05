@@ -109,6 +109,13 @@ async function run() {
     const zoomAfter = await page.evaluate(
       () => document.querySelector(".preview-page img").getBoundingClientRect().width,
     );
+    const zoomLeftReachable = await page.evaluate(() => {
+      const pages = document.querySelector(".preview-pages");
+      pages.scrollLeft = 0;
+      const img = document.querySelector(".preview-page img").getBoundingClientRect();
+      const pr = pages.getBoundingClientRect();
+      return img.left >= pr.left - 1;
+    });
     await page.evaluate(() => {
       Array.from(document.querySelectorAll(".preview-tools button"))
         .find((b) => b.textContent.includes("适应"))
@@ -118,6 +125,35 @@ async function run() {
     const zoomFit = await page.evaluate(
       () => document.querySelector(".preview-page img").getBoundingClientRect().width,
     );
+
+    await page.evaluate(() => {
+      Array.from(document.querySelectorAll(".preview-tools button"))
+        .find((b) => b.textContent.includes("全屏"))
+        .click();
+    });
+    await sleep(400);
+    const fs = await page.evaluate(() => {
+      const aside = document.querySelector(".translate-preview");
+      const r = aside.getBoundingClientRect();
+      return {
+        isFullscreen: aside.classList.contains("fullscreen"),
+        position: getComputedStyle(aside).position,
+        w: Math.round(r.width),
+        h: Math.round(r.height),
+        winW: window.innerWidth,
+        winH: window.innerHeight,
+      };
+    });
+    await page.evaluate(() => {
+      Array.from(document.querySelectorAll(".preview-tools button"))
+        .find((b) => b.textContent.includes("全屏"))
+        .click();
+    });
+    await sleep(400);
+    const fsExited = await page.evaluate(() => {
+      const aside = document.querySelector(".translate-preview");
+      return aside !== null && !aside.classList.contains("fullscreen");
+    });
 
     await page.evaluate(() => {
       document.querySelector(".preview-toggle").click();
@@ -148,9 +184,17 @@ async function run() {
     if (!(zoomAfter > zoomBefore + 5)) {
       failures.push("放大未生效: " + zoomBefore + " -> " + zoomAfter);
     }
+    if (!zoomLeftReachable) failures.push("放大后图片左侧不可达（被遮挡）");
     if (!(Math.abs(zoomFit - zoomBefore) < 5)) {
       failures.push("适应宽度未恢复: " + zoomBefore + " -> " + zoomFit);
     }
+    if (!fs.isFullscreen || fs.position !== "fixed") {
+      failures.push("全屏模式未生效: " + JSON.stringify(fs));
+    }
+    if (fs.w < fs.winW - 40 || fs.h < fs.winH - 40) {
+      failures.push("全屏未覆盖窗口: " + JSON.stringify(fs));
+    }
+    if (!fsExited) failures.push("退出全屏失败");
     if (!openState.src0.includes("scale=3")) {
       failures.push("未使用高清渲染(scale=3): " + openState.src0);
     }
@@ -162,7 +206,7 @@ async function run() {
       process.exitCode = 1;
     } else {
       console.log(
-        "PDF PREVIEW OK: 2 pages rendered, original on left, zoom works, scale=3",
+        "PDF PREVIEW OK: original on left, zoom + fullscreen work, chart text skipped",
       );
     }
   } finally {

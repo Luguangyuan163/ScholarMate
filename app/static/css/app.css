@@ -135,7 +135,7 @@ main {
 }
 .hint { color: var(--muted); font-size: 14px; margin: 8px 0 0; }
 
-section { animation: fade-up 0.45s ease both; }
+section:not(.chat) { animation: fade-up 0.45s ease both; }
 section:nth-of-type(2) { animation-delay: 0.06s; }
 section:nth-of-type(3) { animation-delay: 0.12s; }
 
@@ -790,7 +790,7 @@ button.sidebar-item {
   position: sticky;
   top: 0;
   max-height: calc(100vh - 140px);
-  overflow-y: auto;
+  overflow: auto;
   background: var(--card);
   border: 1px solid var(--line);
   border-radius: var(--radius);
@@ -839,12 +839,38 @@ button.sidebar-item {
 
 .preview-page img {
   max-width: none;
+  display: block;
+  margin: 0 auto;
   height: auto;
   border: 1px solid var(--line);
   border-radius: 4px;
   background: #fff;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
   cursor: zoom-in;
+}
+
+.translate-preview.fullscreen {
+  position: fixed;
+  inset: 12px;
+  z-index: 100;
+  grid-column: auto;
+  grid-row: auto;
+  width: auto;
+  max-width: none;
+  max-height: none;
+  display: flex;
+  flex-direction: column;
+}
+
+.translate-preview.fullscreen .preview-pages {
+  flex: 1;
+  overflow: auto;
+}
+
+.translate-preview.fullscreen .preview-head,
+.translate-preview.fullscreen .preview-tools,
+.translate-preview.fullscreen .hint {
+  flex: none;
 }
 
 .preview-page figcaption {

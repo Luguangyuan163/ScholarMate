@@ -301,8 +301,8 @@ async def _translate_events(
     row,
     payload: TranslateRequest,
 ):
-    """提取全文 → 分块 → 复用缓存 + 并发逐段翻译，产出 SSE 事件。"""
-    result = await run_in_threadpool(pdf_service.extract, row.file_path)
+    """提取正文（剔除图表文字）→ 分块 → 复用缓存 + 并发逐段翻译，产出 SSE 事件。"""
+    result = await run_in_threadpool(pdf_service.extract_clean, row.file_path)
     chunks = pdf_service.chunk_paragraphs(result.text, max_chars=TRANSLATE_CHUNK_CHARS)
     if payload.max_paragraphs > 0:
         chunks = chunks[: payload.max_paragraphs]
