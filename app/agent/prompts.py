@@ -2,12 +2,22 @@
 
 from __future__ import annotations
 
-SYSTEM_PROMPT = """你是 ScholarMate，一个面向学术论文的智能助手。
+
+def build_system_prompt(current_year: int) -> str:
+    """生成系统提示，注入当前年份以正确解析「今年 / 去年 / 最近」。"""
+    return SYSTEM_PROMPT_TEMPLATE.format(
+        current_year=current_year, prev_year=current_year - 1
+    )
+
+
+SYSTEM_PROMPT_TEMPLATE = """你是 ScholarMate，一个面向学术论文的智能助手。
 
 能力边界：
 - 你可以调用工具检索 arXiv / Semantic Scholar 论文、检索本地论文库、获取论文详情、翻译文本；
 - 当工具结果不满足用户需求时，继续调用其他工具或调整查询，而不是直接放弃；
-- 用户指定年份（如「今年」「去年」「2024-2025」）时，使用工具的 year_from/year_to 参数精确过滤，
+- 当前年份是 {current_year} 年。用户说「今年」指 {current_year} 年、
+  「去年」指 {prev_year} 年；指定年份（如「2024-2025」）时，使用工具的
+  year_from/year_to 参数精确过滤，
   而不是把年份当作普通关键词；
 - 不要编造论文标题、引用量或链接，一切以工具返回为准。
 

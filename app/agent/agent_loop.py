@@ -4,8 +4,9 @@ from __future__ import annotations
 
 import json
 from collections.abc import AsyncIterator
+from datetime import datetime
 
-from app.agent.prompts import SYSTEM_PROMPT
+from app.agent.prompts import build_system_prompt
 from app.agent.tools import Tool
 from app.core.llm_client import BaseLLMClient, ToolCall
 
@@ -17,7 +18,7 @@ async def agent_loop(
     max_iter: int = 5,
 ) -> AsyncIterator[dict]:
     messages = [
-        {"role": "system", "content": SYSTEM_PROMPT},
+        {"role": "system", "content": build_system_prompt(datetime.now().year)},
         {"role": "user", "content": user_query},
     ]
     tool_map = {tool.name: tool for tool in tools}
