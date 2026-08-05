@@ -801,7 +801,9 @@ button.sidebar-item {
   grid-column: 2;
   grid-row: 1 / -1;
   align-self: start;
-  height: calc(100vh - 140px);
+  height: 48px;
+  position: sticky;
+  top: 24px;
   cursor: col-resize;
   display: flex;
   align-items: center;
@@ -811,7 +813,7 @@ button.sidebar-item {
 .split-divider::after {
   content: "";
   width: 3px;
-  height: 72px;
+  height: 48px;
   border-radius: 2px;
   background: var(--line-strong);
   transition: background 0.15s ease, box-shadow 0.15s ease;
