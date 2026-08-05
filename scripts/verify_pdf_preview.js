@@ -94,6 +94,14 @@ async function run() {
           const pre = document.querySelector(".translate-preview").getBoundingClientRect();
           return pre.x + pre.width <= seg.x + 5 && pre.y < seg.y + seg.height;
         })(),
+        splitRatio: (() => {
+          const main = document.querySelector(".translate-main");
+          const cols = getComputedStyle(main)
+            .gridTemplateColumns.split(" ")
+            .map((s) => parseFloat(s));
+          if (cols.length !== 2) return -1;
+          return Math.max(cols[0], cols[1]) / (cols[0] + cols[1]);
+        })(),
       };
     });
 
@@ -181,6 +189,9 @@ async function run() {
       failures.push("图片 src 异常: " + openState.src0);
     }
     if (!openState.previewLeft) failures.push("原文未显示在左侧");
+    if (Math.abs(openState.splitRatio - 0.5) > 0.05) {
+      failures.push("原文与译文占比不是各一半: " + openState.splitRatio);
+    }
     if (!(zoomAfter > zoomBefore + 5)) {
       failures.push("放大未生效: " + zoomBefore + " -> " + zoomAfter);
     }
