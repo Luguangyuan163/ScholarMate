@@ -2,13 +2,17 @@
 
 from __future__ import annotations
 
+import time
+
 from fastapi.testclient import TestClient
 
 from app.main import create_app
 
 
 class FakeEmbeddingService:
-    async def embed_texts(self, texts):
+    async def embed_texts(self, texts, on_batch=None):
+        if on_batch is not None:
+            on_batch(len(texts), len(texts))
         return [[0.1] * 8 for _ in texts]
 
 
@@ -17,6 +21,12 @@ class FakeTranslation:
         return f"[{target_lang}] {text}"
 
     async def translate_paragraphs(self, paragraphs, target_lang="zh", batch_size=4):
+        for offset, text in enumerate(paragraphs):
+            yield offset, f"[{target_lang}] {text}"
+
+    async def translate_paragraphs_concurrent(
+        self, paragraphs, target_lang="zh", max_concurrency=4
+    ):
         for offset, text in enumerate(paragraphs):
             yield offset, f"[{target_lang}] {text}"
 
@@ -30,6 +40,13 @@ class RecordingTranslation(FakeTranslation):
         return f"[{target_lang}] {text}"
 
     async def translate_paragraphs(self, paragraphs, target_lang="zh", batch_size=4):
+        for offset, text in enumerate(paragraphs):
+            self.calls += 1
+            yield offset, f"[{target_lang}] {text}"
+
+    async def translate_paragraphs_concurrent(
+        self, paragraphs, target_lang="zh", max_concurrency=4
+    ):
         for offset, text in enumerate(paragraphs):
             self.calls += 1
             yield offset, f"[{target_lang}] {text}"
@@ -57,7 +74,20 @@ def _upload_pdf(app, tmp_path, name="paper.pdf"):
             "/api/pdf/upload",
             files={"file": (name, handle, "application/pdf")},
         )
-    return uploaded.json()["pdf_id"]
+        pdf_id = uploaded.json()["pdf_id"]
+        _wait_ready(client, pdf_id)
+    return pdf_id
+
+
+def _wait_ready(client, pdf_id: int, timeout: float = 5.0) -> None:
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        resp = client.get(f"/api/pdf/{pdf_id}/status")
+        assert resp.status_code == 200
+        if resp.json()["status"] == "ready":
+            return
+        time.sleep(0.05)
+    raise AssertionError(f"pdf {pdf_id} 未在 {timeout}s 内变为 ready")
 
 
 def test_translate_saves_record(app_settings, tmp_path):
@@ -119,6 +149,12 @@ def test_translate_error_does_not_save_record(app_settings, tmp_path):
     class FailingTranslation:
         async def translate_paragraph(self, text, target_lang="zh"):
             raise RuntimeError("llm down")
+
+        async def translate_paragraphs_concurrent(
+            self, paragraphs, target_lang="zh", max_concurrency=4
+        ):
+            raise RuntimeError("llm down")
+            yield  # noqa: B012 使方法成为异步生成器，供 async for 迭代
 
     app = create_app(app_settings)
     app.state.embedding_service = FakeEmbeddingService()

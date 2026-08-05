@@ -2,6 +2,10 @@
 
 from __future__ import annotations
 
+import asyncio
+
+import pytest
+
 from app.services.translation_service import TranslationService
 
 
@@ -103,3 +107,73 @@ async def test_translate_paragraphs_falls_back_on_length_mismatch():
         )
     ]
     assert translated == ["回退译文", "回退译文"]
+
+
+class SlowLLM:
+    def __init__(self, delays: dict[str, float]) -> None:
+        self.delays = delays
+
+    async def chat(self, messages, **kwargs):
+        text = messages[-1]["content"]
+        await asyncio.sleep(self.delays[text])
+        return f"T({text})"
+
+
+async def test_translate_paragraphs_concurrent_yields_in_completion_order():
+    """并发逐段翻译：谁先完成谁先产出，便于前端尽快显示第一段。"""
+    llm = SlowLLM({"slow": 0.2, "fast": 0.01})
+    service = TranslationService(llm=llm)
+    translated = [
+        item
+        async for item in service.translate_paragraphs_concurrent(
+            ["slow", "fast"], "zh", max_concurrency=2
+        )
+    ]
+    assert translated == [(1, "T(fast)"), (0, "T(slow)")]
+
+
+class CountingLLM:
+    def __init__(self) -> None:
+        self.inflight = 0
+        self.max_inflight = 0
+        self._lock = asyncio.Lock()
+
+    async def chat(self, messages, **kwargs):
+        async with self._lock:
+            self.inflight += 1
+            self.max_inflight = max(self.max_inflight, self.inflight)
+        await asyncio.sleep(0.02)
+        async with self._lock:
+            self.inflight -= 1
+        return "ok"
+
+
+async def test_translate_paragraphs_concurrent_limits_concurrency():
+    llm = CountingLLM()
+    service = TranslationService(llm=llm)
+    translated = [
+        item
+        async for item in service.translate_paragraphs_concurrent(
+            ["p1", "p2", "p3", "p4", "p5", "p6"],
+            "zh",
+            max_concurrency=2,
+        )
+    ]
+    assert len(translated) == 6
+    assert llm.max_inflight <= 2
+
+
+async def test_translate_paragraphs_concurrent_raises_on_error():
+    class FailingLLM:
+        async def chat(self, messages, **kwargs):
+            text = messages[-1]["content"]
+            if "bad" in text:
+                raise RuntimeError("boom")
+            return "ok"
+
+    service = TranslationService(llm=FailingLLM())
+    with pytest.raises(RuntimeError, match="boom"):
+        async for _ in service.translate_paragraphs_concurrent(
+            ["ok1", "bad", "ok2"], "zh", max_concurrency=2
+        ):
+            pass

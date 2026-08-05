@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import asyncio
+import threading
+import time
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -59,9 +62,36 @@ class FakeEmbeddingService:
     def __init__(self) -> None:
         self._client = FakeEmbeddings()
 
-    async def embed_texts(self, texts: list[str]) -> list[list[float]]:
+    async def embed_texts(self, texts: list[str], on_batch=None) -> list[list[float]]:
         response = await self._client.create(model="x", input=texts)
+        if on_batch is not None:
+            on_batch(len(texts), len(texts))
         return [item.embedding for item in response.data]
+
+
+class BlockingEmbeddingService:
+    """向量化阻塞在 release 事件上，用于验证上传接口立即返回、后台异步处理。"""
+
+    def __init__(self) -> None:
+        self.release = threading.Event()
+
+    async def embed_texts(self, texts, on_batch=None):
+        await asyncio.to_thread(self.release.wait, 5)
+        if on_batch is not None:
+            on_batch(len(texts), len(texts))
+        return [[0.1] * 8 for _ in texts]
+
+
+def _wait_pdf_status(client, pdf_id: int, expected: str, timeout: float = 5.0) -> dict:
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        resp = client.get(f"/api/pdf/{pdf_id}/status")
+        assert resp.status_code == 200
+        body = resp.json()
+        if body["status"] == expected:
+            return body
+        time.sleep(0.05)
+    raise AssertionError(f"pdf {pdf_id} 未在 {timeout}s 内变为 {expected}")
 
 
 class FakeTranslation:
@@ -73,6 +103,13 @@ class FakeTranslation:
         return f"[{target_lang}] {text}"
 
     async def translate_paragraphs(self, paragraphs, target_lang="zh", batch_size=4):
+        for offset, text in enumerate(paragraphs):
+            self.calls.append(text)
+            yield offset, f"[{target_lang}] {text}"
+
+    async def translate_paragraphs_concurrent(
+        self, paragraphs, target_lang="zh", max_concurrency=4
+    ):
         for offset, text in enumerate(paragraphs):
             self.calls.append(text)
             yield offset, f"[{target_lang}] {text}"
@@ -90,10 +127,11 @@ def test_upload_pdf_and_local_search(app_settings, tmp_path):
                 "/api/pdf/upload",
                 files={"file": ("demo.pdf", handle, "application/pdf")},
             )
-        assert resp.status_code == 200
-        data = resp.json()
-        assert data["status"] == "ready"
+            assert resp.status_code == 200
+            data = resp.json()
+        assert data["status"] == "processing"
         pdf_id = data["pdf_id"]
+        _wait_pdf_status(client, pdf_id, "ready")
 
         search = client.post("/api/search", json={"query": "LoRA", "source": "local"})
         assert search.status_code == 200
@@ -240,14 +278,64 @@ def test_upload_processing_failure_marks_failed(app_settings, tmp_path):
             "/api/pdf/upload",
             files={"file": ("broken.pdf", handle, "application/pdf")},
         )
-    assert resp.status_code == 500
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["status"] == "processing"
+        failed = _wait_pdf_status(client, data["pdf_id"], "failed")
+        assert failed["stage"] == "failed"
+        papers = client.get("/api/papers").json()
+        assert papers[0]["status"] == "failed"
 
 
-def test_translate_pdf_not_ready_returns_409(app_settings, tmp_path):
-    pdf_path = tmp_path / "pending.pdf"
-    _make_pdf(pdf_path, ["Pending paper."])
+def test_upload_returns_processing_and_background_becomes_ready(app_settings, tmp_path):
+    """上传接口立即返回 processing；提取/向量化在后台完成，/status 可查询进度。"""
+    pdf_path = tmp_path / "async.pdf"
+    _make_pdf(pdf_path, ["Async upload paper."])
     app = create_app(app_settings)
-    app.state.embedding_service = FakeEmbeddingService()
+    embedding = BlockingEmbeddingService()
+    app.state.embedding_service = embedding
+    with TestClient(app) as client:
+        with open(pdf_path, "rb") as handle:
+            resp = client.post(
+                "/api/pdf/upload",
+                files={"file": ("async.pdf", handle, "application/pdf")},
+            )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["status"] == "processing"
+        pdf_id = data["pdf_id"]
+
+        status = client.get(f"/api/pdf/{pdf_id}/status").json()
+        assert status["status"] == "processing"
+        assert status["stage"] in {"extracting", "embedding"}
+
+        embedding.release.set()
+        ready = _wait_pdf_status(client, pdf_id, "ready")
+        assert ready["stage"] == "done"
+        papers = client.get("/api/papers").json()
+        assert papers[0]["status"] == "ready"
+
+
+def test_pdf_status_not_found_returns_404(app_settings):
+    app = create_app(app_settings)
+    with TestClient(app) as client:
+        assert client.get("/api/pdf/999/status").status_code == 404
+
+
+def test_translate_pdf_allowed_during_processing(app_settings, tmp_path):
+    """上传后立即可以开始翻译，不必等向量化完成。"""
+    pdf_path = tmp_path / "pending.pdf"
+    _make_multipage_pdf(
+        pdf_path,
+        [
+            "Low-rank adaptation reduces trainable parameters. " * 40,
+            "This makes fine-tuning large models efficient. " * 40,
+        ],
+    )
+    app = create_app(app_settings)
+    embedding = BlockingEmbeddingService()
+    app.state.embedding_service = embedding
+    app.state.translation_service = FakeTranslation()
     with TestClient(app) as client:
         with open(pdf_path, "rb") as handle:
             uploaded = client.post(
@@ -255,18 +343,37 @@ def test_translate_pdf_not_ready_returns_409(app_settings, tmp_path):
                 files={"file": ("pending.pdf", handle, "application/pdf")},
             )
         pdf_id = uploaded.json()["pdf_id"]
+        resp = client.post(f"/api/pdf/{pdf_id}/translate", json={"target_lang": "zh"})
+        assert resp.status_code == 200
+        assert "event: segment" in resp.text
+        assert "event: done" in resp.text
+        embedding.release.set()
 
-        async def _mark_processing():
+
+def test_translate_pdf_failed_returns_409(app_settings, tmp_path):
+    pdf_path = tmp_path / "failed.pdf"
+    _make_pdf(pdf_path, ["Failed paper."])
+    app = create_app(app_settings)
+    app.state.embedding_service = FakeEmbeddingService()
+    with TestClient(app) as client:
+        with open(pdf_path, "rb") as handle:
+            uploaded = client.post(
+                "/api/pdf/upload",
+                files={"file": ("failed.pdf", handle, "application/pdf")},
+            )
+        pdf_id = uploaded.json()["pdf_id"]
+
+        async def _mark_failed():
             async with app.state.database.session_factory() as session:
                 from app.models.uploaded_pdf import UploadedPDF
 
                 row = await session.get(UploadedPDF, pdf_id)
-                row.status = "processing"
+                row.status = "failed"
                 await session.commit()
 
         import asyncio
 
-        asyncio.run(_mark_processing())
+        asyncio.run(_mark_failed())
         resp = client.post(f"/api/pdf/{pdf_id}/translate", json={"target_lang": "zh"})
     assert resp.status_code == 409
 
@@ -310,6 +417,12 @@ def test_translate_pdf_reports_llm_error(app_settings, tmp_path):
         async def translate_paragraphs(self, paragraphs, target_lang="zh", batch_size=4):
             raise RuntimeError("llm down")
 
+        async def translate_paragraphs_concurrent(
+            self, paragraphs, target_lang="zh", max_concurrency=4
+        ):
+            raise RuntimeError("llm down")
+            yield  # noqa: B012 使方法成为异步生成器，供 async for 迭代
+
     pdf_path = tmp_path / "err.pdf"
     _make_multipage_pdf(
         pdf_path,
@@ -337,6 +450,53 @@ def test_translate_pdf_reports_llm_error(app_settings, tmp_path):
     assert "翻译失败" in resp.text
 
 
+def test_translate_pdf_emits_heartbeat_status(app_settings, tmp_path, monkeypatch):
+    """翻译等待期间每 N 秒发 status 心跳，避免长时间无输出。"""
+
+    class SlowTranslation:
+        async def translate_paragraph(self, text, target_lang="zh"):
+            await asyncio.sleep(0.3)
+            return f"[{target_lang}] {text}"
+
+        async def translate_paragraphs(self, paragraphs, target_lang="zh", batch_size=4):
+            for offset, text in enumerate(paragraphs):
+                yield offset, f"[{target_lang}] {text}"
+
+        async def translate_paragraphs_concurrent(
+            self, paragraphs, target_lang="zh", max_concurrency=4
+        ):
+            for offset, text in enumerate(paragraphs):
+                await asyncio.sleep(0.3)
+                yield offset, f"[{target_lang}] {text}"
+
+    monkeypatch.setattr(pdf_api, "TRANSLATE_HEARTBEAT_SECONDS", 0.05)
+    pdf_path = tmp_path / "heartbeat.pdf"
+    _make_multipage_pdf(
+        pdf_path,
+        [
+            "First paragraph. " * 40,
+            "Second paragraph. " * 40,
+        ],
+    )
+    app = create_app(app_settings)
+    app.state.embedding_service = FakeEmbeddingService()
+    app.state.translation_service = SlowTranslation()
+    with TestClient(app) as client:
+        with open(pdf_path, "rb") as handle:
+            uploaded = client.post(
+                "/api/pdf/upload",
+                files={"file": ("heartbeat.pdf", handle, "application/pdf")},
+            )
+        pdf_id = uploaded.json()["pdf_id"]
+        resp = client.post(
+            f"/api/pdf/{pdf_id}/translate",
+            json={"target_lang": "zh", "max_paragraphs": 2},
+        )
+    assert resp.status_code == 200
+    assert "event: status" in resp.text
+    assert "正在翻译" in resp.text
+
+
 def test_import_pdf_from_url_success(app_settings, tmp_path, monkeypatch):
     pdf_path = tmp_path / "remote.pdf"
     _make_pdf(pdf_path, ["Low-rank adaptation is efficient."])
@@ -354,17 +514,16 @@ def test_import_pdf_from_url_success(app_settings, tmp_path, monkeypatch):
             "/api/pdf/import-url",
             json={"url": "https://arxiv.org/pdf/2106.09685", "title": "LoRA"},
         )
-    assert resp.status_code == 200
-    data = resp.json()
-    assert data["status"] == "ready"
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["status"] == "processing"
+        _wait_pdf_status(client, data["pdf_id"], "ready")
 
-    candidates = list(app.state.settings.pdf_upload_dir.glob("*.pdf"))
-    assert len(candidates) == 1
-    assert candidates[0].read_bytes().startswith(b"%PDF")
-
-    with TestClient(app) as client:
+        candidates = list(app.state.settings.pdf_upload_dir.glob("*.pdf"))
+        assert len(candidates) == 1
+        assert candidates[0].read_bytes().startswith(b"%PDF")
         papers = client.get("/api/papers")
-    assert papers.json()[0]["filename"] == "LoRA.pdf"
+        assert papers.json()[0]["filename"] == "LoRA.pdf"
 
 
 def test_import_pdf_from_url_rejects_non_pdf(app_settings, monkeypatch):

@@ -388,6 +388,12 @@ input[type="file"] { font: inherit; color: var(--ink-soft); }
   font-size: 13px;
   padding: 10px 2px;
 }
+
+.translate-status.upload {
+  color: var(--accent, #8b5cf6);
+  font-size: 12px;
+  padding-top: 0;
+}
 .translate-history { margin-top: 22px; }
 .history-head {
   font-family: var(--serif);

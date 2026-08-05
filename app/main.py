@@ -10,12 +10,14 @@ from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
+from sqlalchemy import select
 
 import app.models  # noqa: F401  确保 ORM 模型注册到 Base.metadata
 from app.api import agent, conversations, papers, pdf, search, translations
 from app.config import Settings
 from app.core.database import Database
 from app.core.llm_client import get_llm_client
+from app.models.uploaded_pdf import UploadedPDF
 from app.services.arxiv_service import ArxivService
 from app.services.embedding_service import EmbeddingService
 from app.services.metadata_service import FallbackMetadataSource
@@ -64,6 +66,18 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             app.state.vector_store = VectorStoreService(
                 persist_dir=settings.chroma_persist_dir
             )
+        if not hasattr(app.state, "processing_progress"):
+            app.state.processing_progress = {}
+        async with db.session_factory() as session:
+            stale = (
+                await session.execute(
+                    select(UploadedPDF).where(UploadedPDF.status == "processing")
+                )
+            ).scalars().all()
+            for row in stale:
+                row.status = "failed"
+            if stale:
+                await session.commit()
         if not hasattr(app.state, "llm_client"):
             app.state.llm_client = get_llm_client(settings)
         if not hasattr(app.state, "translation_service"):

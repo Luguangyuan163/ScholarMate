@@ -8,6 +8,7 @@ window.chatApp = function () {
     suggestPapers: [],
     collectedPapers: [],
     view: "chat",
+    uploadPollTimer: null,
     translation: {
       pdfId: null,
       pdfName: "",
@@ -16,6 +17,7 @@ window.chatApp = function () {
       records: [],
       segments: [],
       status: "",
+      uploadStatus: "",
       maxParagraphs: 0,
       busy: false,
       source: null,
@@ -38,6 +40,7 @@ window.chatApp = function () {
         await this.loadTranslationPapers();
         const meta = this.translation.papers.find((p) => String(p.id) === pdf);
         this.openTranslation(Number(pdf), meta ? meta.filename : "PDF #" + pdf);
+        this.startUploadStatusPoll(Number(pdf));
       }
       window.addEventListener("sm:open-translation", (event) => {
         this.openTranslation(event.detail.pdfId, event.detail.filename);
@@ -287,7 +290,8 @@ window.chatApp = function () {
           return;
         }
         const data = await resp.json();
-        this.openTranslation(data.pdf_id, file.name);
+        await this.openTranslation(data.pdf_id, file.name);
+        this.startUploadStatusPoll(data.pdf_id);
       } catch (err) {
         alert("上传失败: " + err.message);
       } finally {
@@ -315,10 +319,12 @@ window.chatApp = function () {
 
     closeTranslation() {
       this.closeTranslationSource();
+      this.stopUploadStatusPoll();
       this.translation.pdfId = null;
       this.translation.pdfName = "";
       this.translation.segments = [];
       this.translation.status = "";
+      this.translation.uploadStatus = "";
       this.view = "chat";
     },
 
@@ -337,6 +343,45 @@ window.chatApp = function () {
     async loadTranslationRecords() {
       const resp = await fetch("/api/translations");
       if (resp.ok) this.translation.records = await resp.json();
+    },
+
+    async startUploadStatusPoll(pdfId) {
+      if (this.uploadPollTimer) return;
+      const tick = async () => {
+        try {
+          const resp = await fetch("/api/pdf/" + pdfId + "/status");
+          if (!resp.ok) {
+            this.stopUploadStatusPoll();
+            return;
+          }
+          const s = await resp.json();
+          if (s.status === "ready") {
+            this.stopUploadStatusPoll();
+            this.translation.uploadStatus = "文档已处理完成，可检索";
+            window.dispatchEvent(new CustomEvent("library:changed"));
+            this.loadTranslationPapers();
+          } else if (s.status === "failed") {
+            this.stopUploadStatusPoll();
+            this.translation.uploadStatus = "文档处理失败，请重新上传";
+          } else if (s.stage === "embedding" && s.total > 0) {
+            this.translation.uploadStatus =
+              "文档处理中：向量化 " + s.done + "/" + s.total + " 段…";
+          } else {
+            this.translation.uploadStatus = "文档处理中…";
+          }
+        } catch {
+          // 网络抖动时继续轮询
+        }
+      };
+      this.uploadPollTimer = setInterval(tick, 1000);
+      await tick();
+    },
+
+    stopUploadStatusPoll() {
+      if (this.uploadPollTimer) {
+        clearInterval(this.uploadPollTimer);
+        this.uploadPollTimer = null;
+      }
     },
 
     async viewSavedRecord(record) {
@@ -391,10 +436,11 @@ window.chatApp = function () {
         }
         const data = await resp.json();
         await this.openTranslation(data.pdf_id, file.name);
+        this.startUploadStatusPoll(data.pdf_id);
       } catch (err) {
         this.translation.status = "错误: " + err.message;
       } finally {
-        this.translation.busy = false;
+        if (!this.translation.source) this.translation.busy = false;
       }
     },
 
@@ -432,6 +478,9 @@ window.chatApp = function () {
       source.addEventListener("progress", (event) =>
         this.handleTranslationEvent("progress", event.data),
       );
+      source.addEventListener("status", (event) =>
+        this.handleTranslationEvent("status", event.data),
+      );
       source.addEventListener("segment", (event) =>
         this.handleTranslationEvent("segment", event.data),
       );
@@ -463,6 +512,8 @@ window.chatApp = function () {
       if (type === "progress") {
         this.translation.status =
           "翻译进度 " + payload.done + "/" + payload.total;
+      } else if (type === "status") {
+        this.translation.status = payload.content;
       } else if (type === "segment") {
         this.translation.segments.push({
           index: payload.index,

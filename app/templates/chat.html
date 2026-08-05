@@ -79,6 +79,7 @@
     </div>
 
     <div class="translate-status" x-show="translation.status" x-text="translation.status"></div>
+    <div class="translate-status upload" x-show="translation.uploadStatus" x-text="translation.uploadStatus"></div>
 
     <div class="segments">
       <template x-for="(seg, i) in translation.segments" :key="i">

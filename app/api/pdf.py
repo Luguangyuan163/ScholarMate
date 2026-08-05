@@ -2,7 +2,11 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
+import logging
+from collections.abc import AsyncIterator
+from contextlib import suppress
 from typing import Annotated
 from uuid import uuid4
 
@@ -21,8 +25,10 @@ from app.models.uploaded_pdf import UploadedPDF
 from app.schemas.pdf import PDFImportRequest, PDFUploadResponse, TranslateRequest
 
 router = APIRouter(prefix="/api/pdf", tags=["pdf"])
+logger = logging.getLogger(__name__)
 TRANSLATE_CHUNK_CHARS = 2000
 TRANSLATE_BATCH_SIZE = 4
+TRANSLATE_HEARTBEAT_SECONDS = 10.0
 DOWNLOAD_TIMEOUT_SECONDS = 30.0
 DOWNLOAD_USER_AGENT = "ScholarMate/0.1 (graduation project)"
 
@@ -85,7 +91,7 @@ async def _store_and_process(
     content: bytes,
     original_name: str,
 ) -> PDFUploadResponse:
-    """校验 → 落盘 → 建记录 → 提取/分块/向量化，上传与 URL 导入共用。"""
+    """校验 → 落盘 → 建记录(processing) → 立即返回；提取/向量化转入后台任务。"""
     if not content.startswith(b"%PDF"):
         raise HTTPException(status_code=400, detail="文件内容不是有效的 PDF")
     settings = request.app.state.settings
@@ -110,27 +116,82 @@ async def _store_and_process(
     await session.commit()
     await session.refresh(record)
 
+    request.app.state.processing_progress[record.id] = {
+        "stage": "extracting",
+        "done": 0,
+        "total": 0,
+    }
+    asyncio.create_task(
+        _process_pdf_background(
+            request,
+            record.id,
+            str(path),
+            original_name,
+        )
+    )
+    return PDFUploadResponse(
+        pdf_id=record.id,
+        filename=original_name,
+        status=record.status,
+    )
+
+
+async def _process_pdf_background(
+    request: Request,
+    pdf_id: int,
+    path: str,
+    original_name: str,
+) -> None:
+    """后台执行 提取 → 分块 → 向量化 → 写库；进度写入 processing_progress。"""
+    progress = request.app.state.processing_progress
+    db = request.app.state.database
     pdf_service = request.app.state.pdf_service
     embedding_service = request.app.state.embedding_service
     vector_store = request.app.state.vector_store
     try:
-        result = await run_in_threadpool(pdf_service.extract, str(path))
+        result = await run_in_threadpool(pdf_service.extract, path)
         chunks = pdf_service.chunk_paragraphs(result.text)
-        vectors = await embedding_service.embed_texts(chunks)
-        await run_in_threadpool(
-            vector_store.add_document, record.id, original_name, chunks, vectors
-        )
-        record.status = "ready"
-        record.page_count = result.page_count
-        await session.commit()
-    except Exception as exc:
-        record.status = "failed"
-        await session.commit()
-        raise HTTPException(status_code=500, detail=f"PDF 处理失败: {exc}") from exc
 
-    return PDFUploadResponse(
-        pdf_id=record.id, filename=original_name, status=record.status
-    )
+        def _report(done: int, total: int) -> None:
+            progress[pdf_id] = {"stage": "embedding", "done": done, "total": total}
+
+        vectors = await embedding_service.embed_texts(chunks, on_batch=_report)
+        await run_in_threadpool(
+            vector_store.add_document, pdf_id, original_name, chunks, vectors
+        )
+        async with db.session_factory() as session:
+            row = await session.get(UploadedPDF, pdf_id)
+            row.status = "ready"
+            row.page_count = result.page_count
+            await session.commit()
+        progress[pdf_id] = {"stage": "done", "done": len(chunks), "total": len(chunks)}
+    except Exception as exc:
+        logger.warning("PDF %s 后台处理失败: %s", pdf_id, exc)
+        async with db.session_factory() as session:
+            row = await session.get(UploadedPDF, pdf_id)
+            row.status = "failed"
+            await session.commit()
+        progress[pdf_id] = {"stage": "failed", "done": 0, "total": 0}
+
+
+@router.get("/{pdf_id}/status")
+async def pdf_status(
+    pdf_id: int,
+    request: Request,
+    session: Annotated[AsyncSession, Depends(get_db)],
+) -> dict:
+    """查询上传处理状态：status + 后台阶段/进度（供前端轮询）。"""
+    row = await session.get(UploadedPDF, pdf_id)
+    if row is None:
+        raise HTTPException(status_code=404, detail="论文不存在")
+    progress = request.app.state.processing_progress.get(pdf_id, {})
+    return {
+        "pdf_id": pdf_id,
+        "status": row.status,
+        "stage": progress.get("stage", row.status),
+        "done": progress.get("done", 0),
+        "total": progress.get("total", 0),
+    }
 
 
 @router.get("/{pdf_id}/file")
@@ -160,8 +221,8 @@ async def translate_pdf(
     row = await session.get(UploadedPDF, pdf_id)
     if row is None:
         raise HTTPException(status_code=404, detail="论文不存在")
-    if row.status != "ready":
-        raise HTTPException(status_code=409, detail="论文尚未处理完成，请稍后重试")
+    if row.status not in {"ready", "processing"}:
+        raise HTTPException(status_code=409, detail="论文处理失败，无法翻译")
 
     return sse_response(
         _pdf_translate_events(request, row, payload)
@@ -180,8 +241,8 @@ async def translate_pdf_stream(
     row = await session.get(UploadedPDF, pdf_id)
     if row is None:
         raise HTTPException(status_code=404, detail="论文不存在")
-    if row.status != "ready":
-        raise HTTPException(status_code=409, detail="论文尚未处理完成，请稍后重试")
+    if row.status not in {"ready", "processing"}:
+        raise HTTPException(status_code=409, detail="论文处理失败，无法翻译")
     payload = TranslateRequest(
         target_lang=target_lang,
         max_paragraphs=max_paragraphs,
@@ -205,7 +266,7 @@ async def _translate_events(
     row,
     payload: TranslateRequest,
 ):
-    """提取全文 → 分块 → 复用缓存 + 批量翻译，产出 SSE 事件。"""
+    """提取全文 → 分块 → 复用缓存 + 并发逐段翻译，产出 SSE 事件。"""
     result = await run_in_threadpool(pdf_service.extract, row.file_path)
     chunks = pdf_service.chunk_paragraphs(result.text, max_chars=TRANSLATE_CHUNK_CHARS)
     if payload.max_paragraphs > 0:
@@ -235,23 +296,20 @@ async def _translate_events(
 
     if pending_texts:
         try:
-            async for offset, translated in translation.translate_paragraphs(
+            async for event in _translate_pending_with_heartbeat(
+                translation,
                 pending_texts,
+                pending_indexes,
+                chunks,
+                total,
                 payload.target_lang,
-                batch_size=TRANSLATE_BATCH_SIZE,
             ):
-                index = pending_indexes[offset]
-                segments_by_index[index] = {
-                    "source": chunks[index],
-                    "translation": translated,
-                }
-                yield {
-                    "type": "segment",
-                    "index": index,
-                    "source": chunks[index],
-                    "translation": translated,
-                    "total": total,
-                }
+                if event["type"] == "segment":
+                    segments_by_index[event["index"]] = {
+                        "source": event["source"],
+                        "translation": event["translation"],
+                    }
+                yield event
         except Exception as exc:
             yield {"type": "error", "content": f"翻译失败: {exc}"}
             return
@@ -259,6 +317,70 @@ async def _translate_events(
     segments = [segments_by_index[index] for index in sorted(segments_by_index)]
     await _save_translation(request, row, payload.target_lang, segments)
     yield {"type": "done", "total": total}
+
+
+async def _translate_pending_with_heartbeat(
+    translation,
+    pending_texts: list[str],
+    pending_indexes: list[int],
+    chunks: list[str],
+    total: int,
+    target_lang: str,
+) -> AsyncIterator[dict]:
+    """逐段并发翻译：先完成先输出；等待期间每隔一段时间发 status 心跳。"""
+    queue: asyncio.Queue = asyncio.Queue()
+    sentinel = object()
+
+    async def _worker() -> None:
+        try:
+            async for offset, text in translation.translate_paragraphs_concurrent(
+                pending_texts,
+                target_lang,
+                max_concurrency=TRANSLATE_BATCH_SIZE,
+            ):
+                await queue.put(("segment", offset, text))
+        except Exception as exc:
+            await queue.put(("error", exc))
+        finally:
+            await queue.put((sentinel, None, None))
+
+    task = asyncio.create_task(_worker())
+    done_count = 0
+    try:
+        while True:
+            try:
+                kind, offset, text = await asyncio.wait_for(
+                    queue.get(), timeout=TRANSLATE_HEARTBEAT_SECONDS
+                )
+            except TimeoutError:
+                remaining = len(pending_texts) - done_count
+                yield {
+                    "type": "status",
+                    "content": (
+                        f"正在翻译剩余 {remaining} 段"
+                        f"（已输出 {done_count}/{total} 段）…"
+                    ),
+                    "done": done_count,
+                    "total": total,
+                }
+                continue
+            if kind is sentinel:
+                return
+            if kind == "error":
+                raise RuntimeError(str(text))
+            index = pending_indexes[offset]
+            done_count += 1
+            yield {
+                "type": "segment",
+                "index": index,
+                "source": chunks[index],
+                "translation": text,
+                "total": total,
+            }
+    finally:
+        task.cancel()
+        with suppress(asyncio.CancelledError):
+            await task
 
 
 async def _load_translation_cache(

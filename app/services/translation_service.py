@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import re
 from collections.abc import AsyncIterator
@@ -53,6 +54,31 @@ class TranslationService:
             translated = await self._translate_batch(batch, target_lang)
             for offset, text in enumerate(translated):
                 yield start + offset, text
+
+    async def translate_paragraphs_concurrent(
+        self,
+        paragraphs: list[str],
+        target_lang: str = "zh",
+        max_concurrency: int = 4,
+    ) -> AsyncIterator[tuple[int, str]]:
+        """逐段并发翻译，谁先完成谁先产出；任一失败则终止并取消其余任务。"""
+        semaphore = asyncio.Semaphore(max_concurrency)
+
+        async def _translate_one(index: int, text: str) -> tuple[int, str]:
+            async with semaphore:
+                return index, await self.translate_paragraph(text, target_lang)
+
+        tasks = [
+            asyncio.create_task(_translate_one(index, text))
+            for index, text in enumerate(paragraphs)
+        ]
+        try:
+            for task in asyncio.as_completed(tasks):
+                yield await task
+        finally:
+            for task in tasks:
+                if not task.done():
+                    task.cancel()
 
     async def _translate_batch(
         self, batch: list[str], target_lang: str
