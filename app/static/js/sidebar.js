@@ -64,6 +64,38 @@ window.appSidebar = function () {
       }
     },
 
+    async deleteConversation(c) {
+      if (!confirm("确定删除会话《" + c.title + "》？删除后不可恢复。")) return;
+      const resp = await fetch("/api/conversations/" + c.id, { method: "DELETE" });
+      if (resp.ok) {
+        if (this.currentId === c.id) window.location.href = "/agent";
+        window.dispatchEvent(new CustomEvent("library:changed"));
+      } else {
+        alert("删除失败: HTTP " + resp.status);
+      }
+    },
+
+    async deleteUploaded(p) {
+      if (!confirm("确定删除论文《" + p.filename + "》？删除后不可恢复。")) return;
+      const resp = await fetch("/api/papers/" + p.id, { method: "DELETE" });
+      if (!resp.ok) {
+        const body = await resp.json().catch(() => ({}));
+        alert("删除失败: " + (body.detail || ("HTTP " + resp.status)));
+        return;
+      }
+      window.dispatchEvent(new CustomEvent("library:changed"));
+    },
+
+    async deleteCollection(p) {
+      if (!confirm("确定删除收藏《" + p.title + "》？")) return;
+      const resp = await fetch("/api/papers/collection/" + p.id, { method: "DELETE" });
+      if (!resp.ok) {
+        alert("删除失败: HTTP " + resp.status);
+        return;
+      }
+      window.dispatchEvent(new CustomEvent("library:changed"));
+    },
+
     isPage(path) {
       return window.location.pathname === path;
     },
