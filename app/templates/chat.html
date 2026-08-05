@@ -137,6 +137,7 @@
                 :disabled="translation.previewZoom === 1">适应宽度</button>
         <button class="btn btn-sm btn-outline" type="button" @click="togglePreviewFullscreen()"
                 x-text="translation.previewFullscreen ? '退出全屏' : '全屏'">全屏</button>
+        <button class="btn btn-sm btn-outline" type="button" @click="resetPreviewWidth()">重置分栏</button>
       </div>
       <p class="hint">提示：点击页面图片可在新窗口查看原图。</p>
       <div class="preview-pages">
@@ -152,6 +153,9 @@
         </template>
       </div>
     </aside>
+
+    <div class="split-divider" x-show="translation.previewOpen"
+         @mousedown="startResize($event)" title="拖动调整原文宽度"></div>
   </div>
 </section>
 {% endblock %}

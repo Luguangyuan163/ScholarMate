@@ -439,6 +439,15 @@ window.chatApp = function () {
         }
       }
       this.translation.previewOpen = true;
+      try {
+        const saved = localStorage.getItem("sm_preview_w");
+        if (saved) {
+          const grid = document.querySelector(".translate-main");
+          if (grid) grid.style.setProperty("--preview-w", saved + "px");
+        }
+      } catch {
+        // localStorage 不可用时忽略
+      }
     },
 
     previewPageList() {
@@ -453,6 +462,66 @@ window.chatApp = function () {
 
     togglePreviewFullscreen() {
       this.translation.previewFullscreen = !this.translation.previewFullscreen;
+    },
+
+    startResize(event) {
+      if (!this.translation.previewOpen) return;
+      event.preventDefault();
+      const grid = event.currentTarget.closest(".translate-main");
+      const preview = grid ? grid.querySelector(".translate-preview") : null;
+      if (!grid || !preview) return;
+      this._resizeState = {
+        grid: grid,
+        divider: event.currentTarget,
+        startX: event.clientX,
+        startWidth: preview.getBoundingClientRect().width,
+        maxWidth: grid.getBoundingClientRect().width * 0.85,
+        minWidth: 220,
+      };
+      this._resizeState.divider.classList.add("dragging");
+      this._resizeMove = (e) => this.applyResize(e);
+      this._resizeEnd = () => this.endResize();
+      window.addEventListener("mousemove", this._resizeMove);
+      window.addEventListener("mouseup", this._resizeEnd);
+    },
+
+    applyResize(event) {
+      const state = this._resizeState;
+      if (!state) return;
+      const width = Math.min(
+        state.maxWidth,
+        Math.max(state.minWidth, state.startWidth + (event.clientX - state.startX)),
+      );
+      state.grid.style.setProperty("--preview-w", width + "px");
+    },
+
+    endResize() {
+      const state = this._resizeState;
+      if (!state) return;
+      window.removeEventListener("mousemove", this._resizeMove);
+      window.removeEventListener("mouseup", this._resizeEnd);
+      this._resizeMove = null;
+      this._resizeEnd = null;
+      state.divider.classList.remove("dragging");
+      const width = parseFloat(state.grid.style.getPropertyValue("--preview-w"));
+      if (Number.isFinite(width)) {
+        try {
+          localStorage.setItem("sm_preview_w", String(Math.round(width)));
+        } catch {
+          // localStorage 不可用时忽略
+        }
+      }
+      this._resizeState = null;
+    },
+
+    resetPreviewWidth() {
+      const grid = document.querySelector(".translate-main");
+      if (grid) grid.style.removeProperty("--preview-w");
+      try {
+        localStorage.removeItem("sm_preview_w");
+      } catch {
+        // localStorage 不可用时忽略
+      }
     },
 
     async deleteRecord(record) {

@@ -775,13 +775,13 @@ button.sidebar-item {
 .translate-main.with-preview {
   max-width: 1600px;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-  gap: 18px;
+  grid-template-columns: var(--preview-w, 1fr) 14px minmax(0, 1fr);
+  gap: 0;
   align-items: start;
 }
 
-.translate-main.with-preview > :not(.translate-preview) {
-  grid-column: 2;
+.translate-main.with-preview > :not(.translate-preview):not(.split-divider) {
+  grid-column: 3;
 }
 
 .translate-preview {
@@ -795,6 +795,32 @@ button.sidebar-item {
   border: 1px solid var(--line);
   border-radius: var(--radius);
   padding: 14px;
+}
+
+.split-divider {
+  grid-column: 2;
+  grid-row: 1 / -1;
+  align-self: start;
+  height: calc(100vh - 140px);
+  cursor: col-resize;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.split-divider::after {
+  content: "";
+  width: 3px;
+  height: 72px;
+  border-radius: 2px;
+  background: var(--line-strong);
+  transition: background 0.15s ease, box-shadow 0.15s ease;
+}
+
+.split-divider:hover::after,
+.split-divider.dragging::after {
+  background: var(--accent);
+  box-shadow: 0 0 8px rgba(31, 58, 95, 0.25);
 }
 
 .preview-head {
@@ -887,6 +913,12 @@ button.sidebar-item {
 @media (max-width: 1080px) {
   .translate-main.with-preview {
     grid-template-columns: 1fr;
+  }
+  .translate-main.with-preview > :not(.translate-preview):not(.split-divider) {
+    grid-column: 1;
+  }
+  .split-divider {
+    display: none;
   }
   .translate-preview {
     grid-column: 1;

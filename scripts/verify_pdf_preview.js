@@ -99,8 +99,8 @@ async function run() {
           const cols = getComputedStyle(main)
             .gridTemplateColumns.split(" ")
             .map((s) => parseFloat(s));
-          if (cols.length !== 2) return -1;
-          return Math.max(cols[0], cols[1]) / (cols[0] + cols[1]);
+          if (cols.length !== 3) return -1;
+          return Math.max(cols[0], cols[2]) / (cols[0] + cols[2]);
         })(),
       };
     });
@@ -163,6 +163,47 @@ async function run() {
       return aside !== null && !aside.classList.contains("fullscreen");
     });
 
+    // 拖拽分隔条调整分栏占比，另一个面板自适应
+    const divider = await page.evaluate(() => {
+      const d = document.querySelector(".split-divider").getBoundingClientRect();
+      return {
+        x: Math.round(d.x + d.width / 2),
+        y: Math.round(d.y + d.height / 2),
+      };
+    });
+    const ratioBeforeDrag = await page.evaluate(() => {
+      const main = document.querySelector(".translate-main");
+      const cols = getComputedStyle(main)
+        .gridTemplateColumns.split(" ")
+        .map((s) => parseFloat(s));
+      return Math.max(cols[0], cols[2]) / (cols[0] + cols[2]);
+    });
+    await page.mouse.move(divider.x, divider.y);
+    await page.mouse.down();
+    await page.mouse.move(divider.x + 220, divider.y, { steps: 10 });
+    await page.mouse.up();
+    await sleep(400);
+    const ratioAfterDrag = await page.evaluate(() => {
+      const main = document.querySelector(".translate-main");
+      const cols = getComputedStyle(main)
+        .gridTemplateColumns.split(" ")
+        .map((s) => parseFloat(s));
+      return Math.max(cols[0], cols[2]) / (cols[0] + cols[2]);
+    });
+    await page.evaluate(() => {
+      Array.from(document.querySelectorAll(".preview-tools button"))
+        .find((b) => b.textContent.includes("重置"))
+        .click();
+    });
+    await sleep(400);
+    const ratioAfterReset = await page.evaluate(() => {
+      const main = document.querySelector(".translate-main");
+      const cols = getComputedStyle(main)
+        .gridTemplateColumns.split(" ")
+        .map((s) => parseFloat(s));
+      return Math.max(cols[0], cols[2]) / (cols[0] + cols[2]);
+    });
+
     await page.evaluate(() => {
       document.querySelector(".preview-toggle").click();
     });
@@ -206,6 +247,17 @@ async function run() {
       failures.push("全屏未覆盖窗口: " + JSON.stringify(fs));
     }
     if (!fsExited) failures.push("退出全屏失败");
+    if (!(ratioAfterDrag > ratioBeforeDrag + 0.05)) {
+      failures.push(
+        "拖拽分隔条未生效: " +
+          ratioBeforeDrag.toFixed(3) +
+          " -> " +
+          ratioAfterDrag.toFixed(3),
+      );
+    }
+    if (Math.abs(ratioAfterReset - 0.5) > 0.05) {
+      failures.push("重置分栏未恢复 50/50: " + ratioAfterReset.toFixed(3));
+    }
     if (!openState.src0.includes("scale=3")) {
       failures.push("未使用高清渲染(scale=3): " + openState.src0);
     }
