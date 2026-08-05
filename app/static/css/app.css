@@ -647,6 +647,7 @@ button.sidebar-item {
   min-width: 0;
   display: flex;
   flex-direction: column;
+  overflow-y: auto;
   background:
     radial-gradient(1000px 400px at 20% -10%, rgba(31, 58, 95, 0.05), transparent 60%),
     var(--paper);
