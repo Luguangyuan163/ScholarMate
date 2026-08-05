@@ -94,9 +94,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     @app.get("/translate", response_class=HTMLResponse)
     async def translate_page(request: Request) -> HTMLResponse:
-        return templates.TemplateResponse(
-            request, "translate.html", {"app_title": settings.app_title}
-        )
+        return templates.TemplateResponse(request, "chat.html", {"app_title": settings.app_title})
 
     @app.get("/papers", response_class=HTMLResponse)
     async def papers_page(request: Request) -> HTMLResponse:

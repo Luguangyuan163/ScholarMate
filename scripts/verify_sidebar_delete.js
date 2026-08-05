@@ -92,7 +92,7 @@ async function sidebarState(page) {
   return page.evaluate(() => {
     const rows = Array.from(document.querySelectorAll(".sidebar-row"));
     const convRows = rows.filter((r) => r.querySelector('a[href*="conv="]'));
-    const uploadRows = rows.filter((r) => r.querySelector('a[href*="pdf="]'));
+    const uploadRows = rows.filter((r) => r.querySelector(".sidebar-pdf-open"));
     const colRows = Array.from(
       document.querySelectorAll(".sidebar-collection"),
     ).filter((r) => r.querySelector(".sidebar-pdf") !== null);
@@ -153,10 +153,10 @@ async function run() {
       return rows.length === 1;
     });
 
-    await clickDelete(page, '.sidebar-row a[href*="pdf="]');
+    await clickDelete(page, ".sidebar-row .sidebar-pdf-open");
     await waitFor(page, () => {
       const rows = Array.from(document.querySelectorAll(".sidebar-row")).filter(
-        (r) => r.querySelector('a[href*="pdf="]'),
+        (r) => r.querySelector(".sidebar-pdf-open"),
       );
       return rows.length === 0;
     });

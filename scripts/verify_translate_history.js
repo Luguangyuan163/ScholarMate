@@ -23,21 +23,23 @@ async function waitFor(page, fn, timeout = 8000) {
   throw new Error("waitFor 超时: " + fn.toString());
 }
 
-function seedData() {
+function seedData(suffix = "") {
   const db = new DatabaseSync(dbPath);
+  const fileName = "hist-seed" + suffix + ".pdf";
+  const displayName = "历史论文" + suffix + ".pdf";
   db.prepare(
     "INSERT INTO uploaded_pdfs (filename, original_name, file_path, status, created_at) " +
       "VALUES (?, ?, ?, ?, datetime('now'))",
-  ).run("hist-seed.pdf", "历史论文.pdf", uploadDir + "\\hist.pdf", "ready");
+  ).run(fileName, displayName, uploadDir + "\\hist" + suffix + ".pdf", "ready");
   const pdfId = db
     .prepare("SELECT id FROM uploaded_pdfs WHERE filename = ?")
-    .get("hist-seed.pdf").id;
+    .get(fileName).id;
   db.prepare(
     "INSERT INTO translation_records (pdf_id, filename, target_lang, segments_json, total, created_at) " +
       "VALUES (?, ?, ?, ?, ?, datetime('now'))",
   ).run(
     pdfId,
-    "历史论文.pdf",
+    displayName,
     "zh",
     JSON.stringify([
       { source: "First sentence of paper.", translation: "论文的第一句。" },
@@ -46,17 +48,19 @@ function seedData() {
     2,
   );
   db.close();
+  return { pdfId, displayName };
 }
 
 function cleanupDb() {
   const db = new DatabaseSync(dbPath);
-  db.exec("DELETE FROM translation_records WHERE filename = '历史论文.pdf'");
-  db.exec("DELETE FROM uploaded_pdfs WHERE filename = 'hist-seed.pdf'");
+  db.exec("DELETE FROM translation_records WHERE filename LIKE '历史论文%'");
+  db.exec("DELETE FROM uploaded_pdfs WHERE filename LIKE 'hist-seed%'");
   db.close();
 }
 
 async function run() {
   let browser;
+  let seededPdfId = null;
   try {
     browser = await puppeteer.launch({
       executablePath: edgePath,
@@ -71,7 +75,8 @@ async function run() {
     });
     page.on("dialog", (dialog) => dialog.accept());
 
-    seedData();
+    const seeded = seedData();
+    seededPdfId = seeded.pdfId;
     await page.goto(baseUrl + "/translate", {
       waitUntil: "networkidle2",
       timeout: 20000,
@@ -108,6 +113,48 @@ async function run() {
     });
     await waitFor(page, () => document.querySelectorAll(".history-item").length === 0);
 
+    // 场景 2：工作台 /?pdf=ID 直接在内嵌翻译视图显示已保存版本
+    const seeded2 = seedData("2");
+    await page.goto(baseUrl + "/?pdf=" + seeded2.pdfId, {
+      waitUntil: "networkidle2",
+      timeout: 20000,
+    });
+    await waitFor(page, () => document.querySelectorAll(".segment").length === 2);
+    const embeddedState = await page.evaluate(() => {
+      const translateVisible =
+        document.querySelector(".translate-main") !== null &&
+        getComputedStyle(document.querySelector(".translate-main")).display !== "none";
+      const chatVisible =
+        document.querySelector(".chat-main") !== null &&
+        getComputedStyle(document.querySelector(".chat-main")).display !== "none";
+      return {
+        translateVisible,
+        chatVisible,
+        segments: document.querySelectorAll(".segment").length,
+        head: document.querySelector(".translate-head h2")
+          ? document.querySelector(".translate-head h2").textContent.trim()
+          : "",
+      };
+    });
+
+    await page.evaluate(() => {
+      const back = document.querySelector(".translate-head button");
+      if (back) back.click();
+    });
+    await waitFor(
+      page,
+      () =>
+        document.querySelector(".chat-main") !== null &&
+        getComputedStyle(document.querySelector(".chat-main")).display !== "none",
+    );
+    const backState = await page.evaluate(() => {
+      const translate = document.querySelector(".translate-main");
+      return (
+        translate === null ||
+        getComputedStyle(translate).display === "none"
+      );
+    });
+
     const failures = [];
     if (listState.count !== 1 || listState.name !== "历史论文.pdf") {
       failures.push("翻译记录列表异常: " + JSON.stringify(listState));
@@ -119,13 +166,26 @@ async function run() {
     ) {
       failures.push("查看保存版本异常: " + JSON.stringify(viewState));
     }
+    if (
+      !embeddedState.translateVisible ||
+      embeddedState.chatVisible ||
+      embeddedState.segments !== 2 ||
+      !embeddedState.head.includes(seeded2.displayName)
+    ) {
+      failures.push("工作台内嵌翻译视图异常: " + JSON.stringify(embeddedState));
+    }
+    if (!backState) {
+      failures.push("返回对话后翻译视图未收起");
+    }
     if (errors.length) failures.push("JS 错误: " + errors.join(" | "));
 
     if (failures.length) {
       console.error("TRANSLATE HISTORY FAILED:\n" + failures.join("\n"));
       process.exitCode = 1;
     } else {
-      console.log("TRANSLATE HISTORY OK: list=1, view=2 segments, delete ok");
+      console.log(
+        "TRANSLATE HISTORY OK: list=1, view=2 segments, delete ok, embedded view ok",
+      );
     }
   } finally {
     if (browser) await browser.close();

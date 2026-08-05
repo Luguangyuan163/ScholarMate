@@ -542,6 +542,14 @@ input[type="file"] { font: inherit; color: var(--ink-soft); }
 .sidebar-item .sidebar-meta { flex: none; font-size: 11px; color: var(--muted); }
 .sidebar-item.active .sidebar-meta { color: rgba(255, 255, 255, 0.75); }
 .sidebar-item .item-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+button.sidebar-item {
+  background: transparent;
+  border: 0;
+  font: inherit;
+  color: var(--ink-soft);
+  text-align: left;
+  cursor: pointer;
+}
 .sidebar-row { display: flex; align-items: center; gap: 4px; }
 .sidebar-row .sidebar-item { flex: 1; min-width: 0; }
 .sidebar-del {
@@ -730,6 +738,29 @@ input[type="file"] { font: inherit; color: var(--ink-soft); }
   cursor: pointer;
 }
 .chat-input input[type="text"] { flex: 1; }
+
+/* 工作台内嵌翻译视图 */
+.translate-main {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  max-width: 860px;
+  width: 100%;
+  margin: 0 auto;
+  padding: 24px 24px 40px;
+}
+.translate-head {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-bottom: 16px;
+}
+.translate-head h2 {
+  font-family: var(--serif);
+  font-size: 24px;
+  margin: 0;
+  word-break: break-all;
+}
 
 @media (max-width: 760px) {
   .app { flex-direction: column; }

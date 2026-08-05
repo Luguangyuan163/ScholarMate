@@ -2,7 +2,7 @@
 {% block title %}工作台 - {{ app_title }}{% endblock %}
 {% block content %}
 <section class="chat" x-data="chatApp()" x-init="init()">
-  <div class="chat-main">
+  <div class="chat-main" x-show="view === 'chat'">
     <div class="chat-log" id="chat-log" x-ref="log">
       <div class="chat-welcome" x-show="!messages.length && !busy">
         <h2>向 ScholarMate Agent 提问</h2>
@@ -44,6 +44,73 @@
       <button type="submit" :disabled="busy || !draft.trim()"
               x-text="busy ? '生成中…' : '发送'">发送</button>
     </form>
+  </div>
+
+  <div class="translate-main" x-show="view === 'translate'">
+    <header class="translate-head">
+      <button class="btn btn-sm btn-outline" type="button" @click="closeTranslation()">← 返回对话</button>
+      <h2 x-text="translation.pdfName ? '对照翻译：' + translation.pdfName : 'PDF 对照翻译'"></h2>
+    </header>
+
+    <div class="card translate-controls">
+      <form class="row" @submit.prevent="translateUpload($event)">
+        <input type="file" accept="application/pdf" :disabled="translation.busy">
+        <button type="submit" :disabled="translation.busy"
+                x-text="translation.busy ? '处理中…' : '上传并翻译'">上传并翻译</button>
+      </form>
+      <div class="row">
+        <label>
+          从论文库选择
+          <select x-model="translation.selectedPdf" @change="translateSelect()" :disabled="translation.busy">
+            <option value="">-- 选择已上传论文 --</option>
+            <template x-for="p in translation.papers" :key="p.id">
+              <option :value="p.id" x-text="p.filename + '（' + p.status + '）'"></option>
+            </template>
+          </select>
+        </label>
+        <button class="btn btn-sm btn-outline" type="button" @click="startTranslation()"
+                :disabled="translation.busy || !translation.pdfId">重新翻译</button>
+      </div>
+    </div>
+
+    <div class="translate-status" x-show="translation.status" x-text="translation.status"></div>
+
+    <div class="segments">
+      <template x-for="(seg, i) in translation.segments" :key="i">
+        <div class="segment">
+          <div class="segment-head">
+            <span class="segment-index" x-text="'§ ' + (i + 1)"></span>
+          </div>
+          <div class="segment-src" x-text="seg.source"></div>
+          <div class="segment-trans" x-text="seg.translation"></div>
+        </div>
+      </template>
+      <div class="placeholder"
+           x-show="!translation.segments.length && !translation.busy && !translation.status">
+        上传 PDF 或从论文库选择后，双语对照将显示在这里。
+      </div>
+    </div>
+
+    <div class="card translate-history">
+      <h3 class="history-head">翻译记录</h3>
+      <p class="hint">已完成的翻译保存在这里，可随时打开对照查看。</p>
+      <div class="history-list">
+        <template x-for="r in translation.records" :key="r.id">
+          <div class="history-item">
+            <div class="history-meta">
+              <span class="history-name" x-text="r.filename"></span>
+              <span class="history-info"
+                    x-text="'· ' + r.target_lang + ' · ' + r.total + ' 段 · ' + (r.created_at || '').slice(0, 16)"></span>
+            </div>
+            <div class="history-actions">
+              <button class="btn btn-sm btn-outline" type="button" @click="viewSavedRecord(r)">查看</button>
+              <button class="btn btn-sm btn-danger" type="button" @click="deleteRecord(r)">删除</button>
+            </div>
+          </div>
+        </template>
+      </div>
+      <p class="placeholder" x-show="!translation.records.length">暂无翻译记录。</p>
+    </div>
   </div>
 </section>
 {% endblock %}

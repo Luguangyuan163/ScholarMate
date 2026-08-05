@@ -64,6 +64,21 @@ window.appSidebar = function () {
       }
     },
 
+    openUploadedPdf(p) {
+      const workbench = ["/", "/agent", "/translate"].includes(
+        window.location.pathname,
+      );
+      if (workbench) {
+        window.dispatchEvent(
+          new CustomEvent("sm:open-translation", {
+            detail: { pdfId: p.id, filename: p.filename },
+          }),
+        );
+      } else {
+        window.location.href = "/?pdf=" + p.id;
+      }
+    },
+
     async deleteConversation(c) {
       if (!confirm("确定删除会话《" + c.title + "》？删除后不可恢复。")) return;
       const resp = await fetch("/api/conversations/" + c.id, { method: "DELETE" });

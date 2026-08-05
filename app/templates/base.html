@@ -38,9 +38,9 @@
         <div class="sidebar-list">
           <template x-for="p in uploaded" :key="'pdf-' + p.id">
             <div class="sidebar-row">
-              <a class="sidebar-item" :href="'/translate?pdf=' + p.id">
+              <button class="sidebar-item sidebar-pdf-open" type="button" @click="openUploadedPdf(p)">
                 <span class="item-title" x-text="p.filename"></span>
-              </a>
+              </button>
               <button class="sidebar-del" type="button" title="删除论文" @click="deleteUploaded(p)">×</button>
             </div>
           </template>

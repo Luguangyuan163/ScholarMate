@@ -7,13 +7,40 @@ window.chatApp = function () {
     conversationId: null,
     suggestPapers: [],
     collectedPapers: [],
+    view: "chat",
+    translation: {
+      pdfId: null,
+      pdfName: "",
+      selectedPdf: "",
+      papers: [],
+      records: [],
+      segments: [],
+      status: "",
+      busy: false,
+      source: null,
+    },
 
     async init() {
       const params = new URLSearchParams(window.location.search);
       const conv = params.get("conv");
       const pdf = params.get("pdf");
+      if (
+        window.location.pathname === "/translate" ||
+        params.get("view") === "translate"
+      ) {
+        this.view = "translate";
+        this.loadTranslationPapers();
+        this.loadTranslationRecords();
+      }
       if (conv) await this.loadConversation(Number(conv));
-      if (pdf) window.location.href = "/translate?pdf=" + pdf;
+      if (pdf) {
+        await this.loadTranslationPapers();
+        const meta = this.translation.papers.find((p) => String(p.id) === pdf);
+        this.openTranslation(Number(pdf), meta ? meta.filename : "PDF #" + pdf);
+      }
+      window.addEventListener("sm:open-translation", (event) => {
+        this.openTranslation(event.detail.pdfId, event.detail.filename);
+      });
     },
 
     async loadConversation(id) {
@@ -259,11 +286,191 @@ window.chatApp = function () {
           return;
         }
         const data = await resp.json();
-        window.location.href = "/translate?pdf=" + data.pdf_id;
+        this.openTranslation(data.pdf_id, file.name);
       } catch (err) {
         alert("上传失败: " + err.message);
       } finally {
         this.busy = false;
+      }
+    },
+
+    async openTranslation(pdfId, name) {
+      this.view = "translate";
+      this.translation.pdfId = pdfId;
+      this.translation.pdfName = name || "";
+      this.translation.selectedPdf = String(pdfId);
+      this.translation.segments = [];
+      this.translation.status = "";
+      await this.loadTranslationRecords();
+      const saved = this.translation.records.find(
+        (r) => String(r.pdf_id) === String(pdfId),
+      );
+      if (saved) {
+        await this.viewSavedRecord(saved);
+      } else {
+        await this.startTranslation();
+      }
+    },
+
+    closeTranslation() {
+      this.closeTranslationSource();
+      this.translation.pdfId = null;
+      this.translation.pdfName = "";
+      this.translation.segments = [];
+      this.translation.status = "";
+      this.view = "chat";
+    },
+
+    closeTranslationSource() {
+      if (this.translation.source) {
+        this.translation.source.close();
+        this.translation.source = null;
+      }
+    },
+
+    async loadTranslationPapers() {
+      const resp = await fetch("/api/papers");
+      if (resp.ok) this.translation.papers = await resp.json();
+    },
+
+    async loadTranslationRecords() {
+      const resp = await fetch("/api/translations");
+      if (resp.ok) this.translation.records = await resp.json();
+    },
+
+    async viewSavedRecord(record) {
+      const resp = await fetch("/api/translations/" + record.id);
+      if (!resp.ok) return;
+      const data = await resp.json();
+      this.translation.segments = data.segments;
+      this.translation.pdfName = data.filename;
+      this.translation.status =
+        "已加载保存的翻译版本（" + (data.created_at || "").slice(0, 16) + "）";
+    },
+
+    async deleteRecord(record) {
+      if (!confirm("确定删除该翻译记录？")) return;
+      const resp = await fetch("/api/translations/" + record.id, {
+        method: "DELETE",
+      });
+      if (resp.ok) {
+        this.translation.records = this.translation.records.filter(
+          (r) => r.id !== record.id,
+        );
+        this.translation.segments = [];
+        this.translation.status = "";
+      } else {
+        alert("删除失败: HTTP " + resp.status);
+      }
+    },
+
+    async translateUpload(event) {
+      const input = event.target.querySelector('input[type="file"]');
+      const file = input.files && input.files[0];
+      if (!file || this.translation.busy) return;
+      this.translation.busy = true;
+      this.translation.segments = [];
+      this.translation.status = "上传中…";
+      const form = new FormData();
+      form.append("file", file);
+      try {
+        const resp = await fetch("/api/pdf/upload", {
+          method: "POST",
+          body: form,
+        });
+        if (!resp.ok) {
+          const body = await resp.json().catch(() => ({}));
+          this.translation.status =
+            "上传失败: " + (body.detail || ("HTTP " + resp.status));
+          return;
+        }
+        const data = await resp.json();
+        await this.openTranslation(data.pdf_id, file.name);
+      } catch (err) {
+        this.translation.status = "错误: " + err.message;
+      } finally {
+        this.translation.busy = false;
+      }
+    },
+
+    async translateSelect() {
+      if (!this.translation.selectedPdf || this.translation.busy) return;
+      const meta = this.translation.papers.find(
+        (p) => String(p.id) === this.translation.selectedPdf,
+      );
+      this.openTranslation(
+        Number(this.translation.selectedPdf),
+        meta ? meta.filename : "",
+      );
+    },
+
+    async startTranslation() {
+      if (!this.translation.pdfId || this.translation.busy) return;
+      this.translation.busy = true;
+      this.translation.segments = [];
+      this.translation.status = "准备翻译…";
+      const params = new URLSearchParams({
+        target_lang: "zh",
+        max_paragraphs: "0",
+      });
+      this.closeTranslationSource();
+      const source = new EventSource(
+        "/api/pdf/" + this.translation.pdfId + "/translate-stream?" + params,
+      );
+      this.translation.source = source;
+      let finished = false;
+      const close = () => {
+        if (finished) return;
+        finished = true;
+        this.closeTranslationSource();
+      };
+      source.addEventListener("progress", (event) =>
+        this.handleTranslationEvent("progress", event.data),
+      );
+      source.addEventListener("segment", (event) =>
+        this.handleTranslationEvent("segment", event.data),
+      );
+      source.addEventListener("error", (event) =>
+        this.handleTranslationEvent("error", event.data),
+      );
+      source.addEventListener("done", (event) => {
+        this.handleTranslationEvent("done", event.data);
+        close();
+        this.loadTranslationRecords();
+      });
+      source.onerror = () => {
+        if (finished) return;
+        close();
+        if (!this.translation.status.includes("完成")) {
+          this.translation.status = "翻译连接中断，请重试";
+        }
+        this.translation.busy = false;
+      };
+    },
+
+    handleTranslationEvent(type, raw) {
+      let payload;
+      try {
+        payload = JSON.parse(raw);
+      } catch {
+        return;
+      }
+      if (type === "progress") {
+        this.translation.status =
+          "翻译进度 " + payload.done + "/" + payload.total;
+      } else if (type === "segment") {
+        this.translation.segments.push({
+          source: payload.source,
+          translation: payload.translation,
+        });
+        this.translation.status =
+          "翻译进度 " + (payload.index + 1) + "/" + payload.total;
+      } else if (type === "done") {
+        this.translation.status = "翻译完成，共 " + payload.total + " 段";
+        this.translation.busy = false;
+      } else if (type === "error") {
+        this.translation.status = "错误: " + payload.content;
+        this.translation.busy = false;
       }
     },
 
