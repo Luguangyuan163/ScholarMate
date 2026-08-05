@@ -286,7 +286,10 @@ window.chatApp = function () {
       if (!m.pdf) m.pdf = { filename: "", status: "", segments: [] };
       this.messages.push(m);
       this.scrollToBottom();
-      return m;
+      // 必须返回响应式代理而非原始对象：Alpine 只追踪经代理的写入，
+      // 若返回原始对象，后续 assistant.content / msg.pdf.status 等变更
+      // 不会触发 DOM 重渲染，消息要到重新进入会话才会显示。
+      return this.messages[this.messages.length - 1];
     },
 
     lineValue(part, prefix) {

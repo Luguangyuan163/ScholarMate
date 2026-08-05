@@ -45,13 +45,23 @@ const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
     (btn) => btn.disabled,
   );
   await page.click('button[type="submit"]');
-  await sleep(9000);
+  const deadline = Date.now() + 30000;
+  let replyText = "";
+  while (Date.now() < deadline) {
+    replyText = await page.$$eval(
+      ".chat-msg",
+      (els) => (els.length > 1 ? els[els.length - 1].textContent.trim() : ""),
+    );
+    if (replyText) break;
+    await sleep(500);
+  }
   const messageCount = await page.$$eval(".chat-msg", (els) => els.length);
 
   const failures = [];
   if (errors.length) failures.push("Alpine/JS errors: " + errors.join(" | "));
   if (buttonDisabled) failures.push("发送按钮在输入后仍为禁用状态");
   if (messageCount < 2) failures.push(`消息未发送（仅 ${messageCount} 条）`);
+  if (!replyText) failures.push("AI 回复内容未实时渲染到界面（重进会话才显示的回归）");
 
   console.log(
     failures.length
