@@ -12,7 +12,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
 import app.models  # noqa: F401  确保 ORM 模型注册到 Base.metadata
-from app.api import agent, papers, pdf, search
+from app.api import agent, conversations, papers, pdf, search
 from app.config import Settings
 from app.core.database import Database
 from app.core.llm_client import get_llm_client
@@ -82,11 +82,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     @app.get("/", response_class=HTMLResponse)
     async def index(request: Request) -> HTMLResponse:
-        return templates.TemplateResponse(request, "index.html", {"app_title": settings.app_title})
+        return templates.TemplateResponse(request, "chat.html", {"app_title": settings.app_title})
 
     @app.get("/agent", response_class=HTMLResponse)
     async def agent_page(request: Request) -> HTMLResponse:
-        return templates.TemplateResponse(request, "agent.html", {"app_title": settings.app_title})
+        return templates.TemplateResponse(request, "chat.html", {"app_title": settings.app_title})
 
     @app.get("/translate", response_class=HTMLResponse)
     async def translate_page(request: Request) -> HTMLResponse:
@@ -100,6 +100,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     app.include_router(search.router)
     app.include_router(agent.router)
+    app.include_router(conversations.router)
     app.include_router(pdf.router)
     app.include_router(papers.router)
     return app

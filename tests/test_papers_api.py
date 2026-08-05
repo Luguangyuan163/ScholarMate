@@ -63,3 +63,49 @@ def test_delete_rejects_path_outside_upload_dir(app_settings, tmp_path):
         resp = client.delete(f"/api/papers/{pdf_id}")
     assert resp.status_code == 400
     assert outside.exists()
+
+
+def test_import_papers_dedupes_and_lists(app_settings):
+    app = create_app(app_settings)
+    paper = {
+        "title": "LoRA: Low-Rank Adaptation",
+        "authors": ["Edward Hu"],
+        "abstract": "We propose low-rank adaptation.",
+        "source": "arxiv",
+        "external_id": "2106.09685",
+        "year": 2021,
+        "citation_count": 2509,
+        "url": "https://arxiv.org/abs/2106.09685",
+    }
+    with TestClient(app) as client:
+        first = client.post("/api/papers/import", json={"papers": [paper]})
+        assert first.status_code == 200
+        assert first.json() == {"imported": 1, "skipped": 0}
+
+        again = client.post("/api/papers/import", json={"papers": [paper]})
+        assert again.json() == {"imported": 0, "skipped": 1}
+
+        collection = client.get("/api/papers/collection")
+        assert collection.status_code == 200
+        assert len(collection.json()) == 1
+        assert collection.json()[0]["citation_count"] == 2509
+
+
+def test_delete_collection_paper(app_settings):
+    app = create_app(app_settings)
+    paper = {
+        "title": "A",
+        "source": "s2",
+        "external_id": "abc",
+        "authors": [],
+        "abstract": "",
+        "year": 2020,
+        "citation_count": 1,
+        "url": "",
+    }
+    with TestClient(app) as client:
+        client.post("/api/papers/import", json={"papers": [paper]})
+        paper_id = client.get("/api/papers/collection").json()[0]["id"]
+        deleted = client.delete(f"/api/papers/collection/{paper_id}")
+        assert deleted.status_code == 200
+        assert client.get("/api/papers/collection").json() == []

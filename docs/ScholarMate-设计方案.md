@@ -615,6 +615,9 @@ MAX_UPLOAD_MB=50
 - [x] Agent 对话页面（聊天界面 + 工具调用状态展示）
 - [x] 实测验证：Agent 真实调用 search_local 多轮检索本地论文库并输出结构化总结（DeepSeek 并行工具调用正常）
 - [x] 「按引用量排序」场景：已通过 OpenAlex 免 key 实机验证（2026-08-04）
+- [x] 工作台形态：侧边栏（会话历史 / 新会话 / 本地论文库 / 上传 PDF）+ 对话主区；
+      会话与消息持久化（conversations/messages 表）；对话内上传 PDF 翻译；
+      对话结束后按用户选择将检索到的论文一键收藏入本地论文库（source+external_id 去重）
 
 ### 第四阶段：PDF 翻译 + 界面打磨（预计 3-5 天）
 

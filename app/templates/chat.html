@@ -1,0 +1,60 @@
+{% extends "base.html" %}
+{% block title %}工作台 - {{ app_title }}{% endblock %}
+{% block content %}
+<section class="chat" x-data="chatApp()" x-init="init()">
+  <div class="chat-main">
+    <div class="chat-log" id="chat-log" x-ref="log">
+      <div class="chat-welcome" x-show="!messages.length && !busy">
+        <h2>向 ScholarMate Agent 提问</h2>
+        <p>自动检索 arXiv / Semantic Scholar / 本地论文库，支持 PDF 翻译与论文收藏</p>
+        <div class="chat-suggestions">
+          <button @click="ask('找 3 篇 2024 年关于 LoRA 微调的论文，按引用量排序')">找 LoRA 高引论文</button>
+          <button @click="ask('检索本地论文库中关于低秩适配的内容')">检索本地论文库</button>
+          <button @click="ask('LoRA 相比全量微调为什么更省显存？')">LoRA 原理问答</button>
+        </div>
+      </div>
+
+      <template x-for="(m, i) in messages" :key="i">
+        <div class="chat-msg" :class="m.role">
+          <div class="msg-body" x-show="m.content" x-text="m.content"></div>
+          <div class="msg-tools" x-show="m.tools && m.tools.length">
+            <template x-for="(t, ti) in m.tools" :key="ti">
+              <span class="tool-tag" x-text="t"></span>
+            </template>
+          </div>
+          <div class="msg-pdf" x-show="m.pdf">
+            <div class="msg-pdf-head">
+              <span x-text="m.pdf.filename"></span>
+              <span class="pdf-status" x-text="m.pdf.status"></span>
+            </div>
+            <div class="msg-pdf-body">
+              <template x-for="(seg, si) in m.pdf.segments" :key="si">
+                <div class="msg-pdf-seg">
+                  <div class="msg-pdf-src" x-text="seg.source"></div>
+                  <div class="msg-pdf-trans" x-text="seg.translation"></div>
+                </div>
+              </template>
+            </div>
+          </div>
+        </div>
+      </template>
+    </div>
+
+    <div class="save-bar" x-show="suggestPapers.length">
+      <span x-text="'本次对话发现 ' + suggestPapers.length + ' 篇论文，要存入本地论文库吗？'"></span>
+      <button class="btn btn-sm" @click="savePapers()">存入论文库</button>
+      <button class="btn btn-sm btn-outline" @click="suggestPapers = []">忽略</button>
+    </div>
+
+    <form class="chat-input" @submit.prevent="send()">
+      <button type="button" class="attach" @click="$refs.file.click()" title="上传 PDF 翻译">📎</button>
+      <input type="file" x-ref="file" accept="application/pdf" hidden @change="attachPdf($event)">
+      <input type="text" x-model="draft" placeholder="输入问题，或上传 PDF 进行翻译…" :disabled="busy" autocomplete="off">
+      <button type="submit" :disabled="busy || !draft.trim()">发送</button>
+    </form>
+  </div>
+</section>
+{% endblock %}
+{% block scripts %}
+<script src="/static/js/chat.js" defer></script>
+{% endblock %}

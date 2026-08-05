@@ -11,25 +11,62 @@
   <script src="/static/vendor/alpine.min.js" defer></script>
 </head>
 <body>
-  <header class="topbar">
-    <a class="brand" href="/">
-      <img class="brand-logo" src="/static/img/logo.svg" alt="">
-      <span class="brand-name">{{ app_title }}</span>
-      <span class="brand-sub">学术检索 · 翻译 · 智能助理</span>
-    </a>
-    <nav class="nav">
-      <a href="/" {% if request.url.path == "/" %}class="active"{% endif %}>检索</a>
-      <a href="/agent" {% if request.url.path == "/agent" %}class="active"{% endif %}>Agent 对话</a>
-      <a href="/translate" {% if request.url.path == "/translate" %}class="active"{% endif %}>翻译</a>
-      <a href="/papers" {% if request.url.path == "/papers" %}class="active"{% endif %}>论文库</a>
-    </nav>
-  </header>
-  <main>
-    {% block content %}{% endblock %}
-  </main>
-  <footer class="footer">ScholarMate · 毕业设计 · 本地桌面应用</footer>
-  <script src="/static/js/agent_chat.js" defer></script>
-  <script src="/static/js/translate.js" defer></script>
-  <script src="/static/js/papers.js" defer></script>
+  <div class="app" x-data="appSidebar()" x-init="init()">
+    <aside class="sidebar">
+      <div class="sidebar-brand">
+        <img src="/static/img/logo.svg" alt="">
+        <span>{{ app_title }}</span>
+      </div>
+
+      <button class="btn sidebar-new" @click="newConversation()">＋ 新会话</button>
+
+      <nav class="sidebar-section">
+        <div class="sidebar-heading">会话</div>
+        <div class="sidebar-list" x-show="conversations.length">
+          <template x-for="c in conversations" :key="c.id">
+            <a class="sidebar-item" :class="{ active: c.id === currentId }" :href="'/agent?conv=' + c.id">
+              <span class="item-title" x-text="c.title"></span>
+              <span class="sidebar-meta" x-text="c.message_count"></span>
+            </a>
+          </template>
+        </div>
+        <p class="sidebar-empty" x-show="!conversations.length && !loading">暂无会话，点击上方按钮创建。</p>
+      </nav>
+
+      <nav class="sidebar-section">
+        <div class="sidebar-heading">本地论文库</div>
+        <div class="sidebar-list">
+          <template x-for="p in uploaded" :key="'pdf-' + p.id">
+            <a class="sidebar-item" :href="'/agent?pdf=' + p.id">
+              <span class="item-title" x-text="p.filename"></span>
+            </a>
+          </template>
+          <template x-for="p in collection" :key="'col-' + p.id">
+            <a class="sidebar-item" :href="p.url || '#'" :target="p.url ? '_blank' : null">
+              <span class="item-title" x-text="p.title"></span>
+              <span class="sidebar-meta" x-text="'被引 ' + p.citation_count"></span>
+            </a>
+          </template>
+        </div>
+        <p class="sidebar-empty" x-show="!uploaded.length && !collection.length && !loading">暂无论文。</p>
+        <label class="btn btn-outline btn-sm sidebar-upload">
+          上传 PDF 入库
+          <input type="file" accept="application/pdf" hidden @change="uploadPdf($event)">
+        </label>
+      </nav>
+
+      <nav class="sidebar-footer">
+        <a href="/" :class="{ active: isPage('/') }">工作台</a>
+        <a href="/translate" :class="{ active: isPage('/translate') }">翻译</a>
+        <a href="/papers" :class="{ active: isPage('/papers') }">论文库</a>
+      </nav>
+    </aside>
+
+    <main class="content">
+      {% block content %}{% endblock %}
+    </main>
+  </div>
+  <script src="/static/js/sidebar.js" defer></script>
+  {% block scripts %}{% endblock %}
 </body>
 </html>

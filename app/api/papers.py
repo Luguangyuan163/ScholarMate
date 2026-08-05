@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from typing import Annotated
 
@@ -11,9 +12,82 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.concurrency import run_in_threadpool
 
 from app.core.database import get_db
+from app.models.paper import Paper
 from app.models.uploaded_pdf import UploadedPDF
+from app.schemas.paper import PaperImportRequest
 
 router = APIRouter(prefix="/api/papers", tags=["papers"])
+
+
+@router.post("/import")
+async def import_papers(
+    payload: PaperImportRequest,
+    session: Annotated[AsyncSession, Depends(get_db)],
+) -> dict:
+    """批量收藏论文元数据（按 source + external_id 去重）。"""
+    imported = 0
+    skipped = 0
+    for item in payload.papers:
+        exists = await session.execute(
+            select(Paper).where(
+                Paper.source == item.source,
+                Paper.external_id == item.external_id,
+            )
+        )
+        if exists.scalar_one_or_none() is not None:
+            skipped += 1
+            continue
+        session.add(
+            Paper(
+                title=item.title,
+                authors=json.dumps(item.authors, ensure_ascii=False),
+                abstract=item.abstract,
+                source=item.source,
+                external_id=item.external_id,
+                year=item.year,
+                citation_count=item.citation_count,
+                url=item.url,
+            )
+        )
+        imported += 1
+    await session.commit()
+    return {"imported": imported, "skipped": skipped}
+
+
+@router.get("/collection")
+async def list_collection(
+    session: Annotated[AsyncSession, Depends(get_db)],
+) -> list[dict]:
+    rows = (
+        await session.execute(select(Paper).order_by(Paper.created_at.desc()))
+    ).scalars().all()
+    return [
+        {
+            "id": row.id,
+            "title": row.title,
+            "authors": json.loads(row.authors or "[]"),
+            "abstract": row.abstract,
+            "source": row.source,
+            "external_id": row.external_id,
+            "year": row.year,
+            "citation_count": row.citation_count,
+            "url": row.url,
+        }
+        for row in rows
+    ]
+
+
+@router.delete("/collection/{paper_id}")
+async def delete_collection_paper(
+    paper_id: int,
+    session: Annotated[AsyncSession, Depends(get_db)],
+) -> dict:
+    row = await session.get(Paper, paper_id)
+    if row is None:
+        raise HTTPException(status_code=404, detail="论文不存在")
+    await session.delete(row)
+    await session.commit()
+    return {"deleted": paper_id}
 
 
 @router.get("")

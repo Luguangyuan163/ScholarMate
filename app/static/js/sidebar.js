@@ -1,0 +1,65 @@
+// 侧边栏：会话列表 / 本地论文库 / 上传 PDF / 导航
+window.appSidebar = function () {
+  return {
+    conversations: [],
+    uploaded: [],
+    collection: [],
+    loading: true,
+    currentId: null,
+
+    async init() {
+      const params = new URLSearchParams(window.location.search);
+      this.currentId = params.get("conv") ? Number(params.get("conv")) : null;
+      await this.refresh();
+      window.addEventListener("library:changed", () => this.refresh());
+    },
+
+    async refresh() {
+      await Promise.all([this.loadConversations(), this.loadLibrary()]);
+      this.loading = false;
+    },
+
+    async loadConversations() {
+      const resp = await fetch("/api/conversations");
+      if (resp.ok) this.conversations = await resp.json();
+    },
+
+    async loadLibrary() {
+      const [pdfResp, colResp] = await Promise.all([
+        fetch("/api/papers"),
+        fetch("/api/papers/collection"),
+      ]);
+      if (pdfResp.ok) this.uploaded = await pdfResp.json();
+      if (colResp.ok) this.collection = await colResp.json();
+    },
+
+    newConversation() {
+      window.location.href = "/agent";
+    },
+
+    async uploadPdf(event) {
+      const file = event.target.files && event.target.files[0];
+      if (!file) return;
+      const form = new FormData();
+      form.append("file", file);
+      try {
+        const resp = await fetch("/api/pdf/upload", { method: "POST", body: form });
+        if (!resp.ok) {
+          const body = await resp.json().catch(() => ({}));
+          alert("上传失败: " + (body.detail || ("HTTP " + resp.status)));
+          return;
+        }
+        const data = await resp.json();
+        window.location.href = "/agent?pdf=" + data.pdf_id;
+      } catch (err) {
+        alert("上传失败: " + err.message);
+      } finally {
+        event.target.value = "";
+      }
+    },
+
+    isPage(path) {
+      return window.location.pathname === path;
+    },
+  };
+};
