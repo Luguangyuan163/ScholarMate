@@ -51,17 +51,9 @@ window.chatApp = function () {
           body: JSON.stringify({ query: text, max_iterations: 6 }),
         });
         if (!resp.ok) throw new Error("HTTP " + resp.status);
-        const reader = resp.body.getReader();
-        const decoder = new TextDecoder();
-        let buffer = "";
-        while (true) {
-          const { value, done } = await reader.read();
-          if (done) break;
-          buffer += decoder.decode(value, { stream: true });
-          const parts = buffer.split("\n\n");
-          buffer = parts.pop();
-          for (const part of parts) this.handleEvent(part, assistant);
-        }
+        await window.SSEUtil.readBody(resp, (part) =>
+          this.handleEvent(part, assistant),
+        );
         if (assistant.content) await this.saveMessage("assistant", assistant.content);
         if (this.collectedPapers.length) {
           if (localStorage.getItem("sm_auto_save") !== "0") {
@@ -71,7 +63,7 @@ window.chatApp = function () {
           }
         }
       } catch (err) {
-        assistant.content = "请求失败: " + err.message;
+        if (!assistant.content) assistant.content = "请求失败: " + err.message;
       } finally {
         this.busy = false;
         this.scrollToBottom();
@@ -235,18 +227,10 @@ window.chatApp = function () {
         msg.pdf.status = "翻译请求失败: HTTP " + resp.status;
         return;
       }
-      const reader = resp.body.getReader();
-      const decoder = new TextDecoder();
-      let buffer = "";
       msg.pdf.status = "翻译中…";
-      while (true) {
-        const { value, done } = await reader.read();
-        if (done) break;
-        buffer += decoder.decode(value, { stream: true });
-        const parts = buffer.split("\n\n");
-        buffer = parts.pop();
-        for (const part of parts) this.handlePdfEvent(part, msg);
-      }
+      await window.SSEUtil.readBody(resp, (part) =>
+        this.handlePdfEvent(part, msg),
+      );
     },
 
     handlePdfEvent(part, msg) {

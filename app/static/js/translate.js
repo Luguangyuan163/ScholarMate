@@ -76,17 +76,7 @@ window.translateApp = function () {
         this.status = "翻译请求失败: " + (body.detail || ("HTTP " + resp.status));
         return;
       }
-      const reader = resp.body.getReader();
-      const decoder = new TextDecoder();
-      let buffer = "";
-      while (true) {
-        const { value, done } = await reader.read();
-        if (done) break;
-        buffer += decoder.decode(value, { stream: true });
-        const parts = buffer.split("\n\n");
-        buffer = parts.pop();
-        for (const part of parts) this.handleEvent(part);
-      }
+      await window.SSEUtil.readBody(resp, (part) => this.handleEvent(part));
     },
 
     handleEvent(part) {
