@@ -36,6 +36,7 @@ async function run() {
       args: ["--no-sandbox", "--disable-gpu"],
     });
     const page = await browser.newPage();
+    await page.setViewport({ width: 1280, height: 800 });
     const errors = [];
     page.on("pageerror", (err) => errors.push("PAGEERROR " + err.message));
     page.on("console", (msg) => {
@@ -85,6 +86,11 @@ async function run() {
           : "",
         toggleText: toggle ? toggle.textContent.trim() : "",
         src0: imgs[0] ? imgs[0].src : "",
+        sideBySide: (() => {
+          const seg = document.querySelector(".segments").getBoundingClientRect();
+          const pre = document.querySelector(".translate-preview").getBoundingClientRect();
+          return pre.x >= seg.x + seg.width - 5 && pre.y < seg.y + seg.height;
+        })(),
       };
     });
 
@@ -110,6 +116,7 @@ async function run() {
     if (!openState.src0.includes("/api/pdf/") || !openState.src0.includes("pages/1/image")) {
       failures.push("图片 src 异常: " + openState.src0);
     }
+    if (!openState.sideBySide) failures.push("原文与翻译未左右分栏显示");
     if (!closed) failures.push("收起后预览面板未隐藏");
     if (errors.length) failures.push("JS 错误: " + errors.join(" | "));
 

@@ -764,6 +764,10 @@ button.sidebar-item {
   align-items: start;
 }
 
+.chat:has(.translate-main.with-preview) {
+  max-width: 1440px;
+}
+
 .translate-main.with-preview > :not(.translate-preview) {
   grid-column: 1;
 }
@@ -819,6 +823,18 @@ button.sidebar-item {
 
 .preview-toggle {
   margin-left: auto;
+}
+
+@media (max-width: 1080px) {
+  .translate-main.with-preview {
+    grid-template-columns: 1fr;
+  }
+  .translate-preview {
+    grid-column: 1;
+    grid-row: auto;
+    position: static;
+    max-height: none;
+  }
 }
 .translate-head {
   display: flex;

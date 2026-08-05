@@ -46,7 +46,7 @@
     </form>
   </div>
 
-  <div class="translate-main" x-show="view === 'translate'">
+  <div class="translate-main" :class="{ 'with-preview': translation.previewOpen }" x-show="view === 'translate'">
     <header class="translate-head">
       <button class="btn btn-sm btn-outline" type="button" @click="closeTranslation()">← 返回对话</button>
       <h2 x-text="translation.pdfName ? '对照翻译：' + translation.pdfName : 'PDF 对照翻译'"></h2>
