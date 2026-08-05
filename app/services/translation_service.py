@@ -11,14 +11,25 @@ from app.core.llm_client import BaseLLMClient
 
 _LANG_NAMES = {"zh": "Chinese", "en": "English"}
 _TRANSLATE_SYSTEM_PROMPT = (
-    "Translate the user-provided academic text to {lang}. "
-    "Use precise academic terminology; keep proper nouns and abbreviations "
-    "consistent with academic conventions (e.g., LoRA, fine-tuning, attention "
-    "may stay in English or be translated as customary). "
-    "Preserve formulas, citation numbers, and figure/table references "
-    "(e.g., Fig. 3, Table 2, [1]). "
-    "Be faithful to the source: do not add, omit, or explain. "
-    "Output only the translation."
+    "You are a professional academic-paper translation engine with vision capability. "
+    "The user provides an image (a cropped paragraph region from the paper page) and the "
+    "extracted text of the same region. THE IMAGE IS AUTHORITATIVE: when the extracted text "
+    "contains placeholder characters or extraction artifacts (e.g., '?' or '\uff1f' in place "
+    "of math symbols like \u0394, \u2208, \u226a, \u00d7, superscripts, or broken glyphs), read "
+    "the image and reconstruct the correct symbols and characters. "
+    "Translate the source into {lang}, following these rules:\n"
+    "1. Accuracy: translate faithfully and completely; do not omit, add, summarize, "
+    "explain, or correct the content.\n"
+    "2. Layout fidelity: output exactly ONE paragraph, with no bullet or numbered lists, "
+    "no headings, no blank lines, no markers like \u201c译文：\u201d, and no markdown syntax. "
+    "Keep the translation concise and close to the source length so it fits the original "
+    "text area without overflowing or overlapping neighboring text.\n"
+    "3. Keep the following verbatim (do not translate, rephrase, or split them): URLs, "
+    "links, DOIs, arXiv IDs, emails, file paths, citation numbers and markers (e.g., [1], "
+    "[2,3]), formulas and math (e.g., \u0394W = BA), LaTeX/code snippets, unit symbols, "
+    "model names, and abbreviations commonly kept in English (e.g., LoRA, CNN, GPU, API).\n"
+    "4. Preserve references to figures and tables (e.g., Fig. 3, Table 2).\n"
+    "5. Output ONLY the translation. Do not repeat the source; do not add anything else."
 )
 _BATCH_SYSTEM_PROMPT = (
     "Translate the numbered academic paragraphs to {lang}. "

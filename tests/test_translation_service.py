@@ -25,9 +25,11 @@ async def test_translate_paragraph_uses_academic_prompt():
     result = await service.translate_paragraph("Hello", "zh")
     assert result == "译文：你好"
     system = llm.last_messages[0]["content"]
-    assert "Translate the user-provided academic text to Chinese" in system
-    assert "formulas" in system
-    assert "Output only the translation" in system
+    assert "Translate the source into Chinese" in system
+    assert "Layout fidelity" in system
+    assert "THE IMAGE IS AUTHORITATIVE" in system
+    assert "URLs" in system and "DOIs" in system
+    assert "Output ONLY the translation" in system
     assert llm.last_messages[-1]["content"] == "原文：\nHello"
 
 
@@ -35,7 +37,7 @@ async def test_translate_paragraph_maps_language_name():
     llm = FakeChatLLM()
     service = TranslationService(llm=llm)
     await service.translate_paragraph("你好", "en")
-    assert "Translate the user-provided academic text to English" in (
+    assert "Translate the source into English" in (
         llm.last_messages[0]["content"]
     )
 

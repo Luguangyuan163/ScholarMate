@@ -993,11 +993,12 @@ button.sidebar-item {
 }
 
 .layout-pages.mode-contrast .layout-bg {
-  opacity: 0.38;
+  opacity: 0;
 }
 
 .layout-para {
   position: absolute;
+  z-index: 1;
   color: var(--ink);
   line-height: 1.4;
   overflow-wrap: anywhere;
@@ -1015,6 +1016,7 @@ button.sidebar-item {
 
 .layout-para:hover,
 .layout-para.hovered {
+  z-index: 2;
   background: var(--amber-soft);
   box-shadow: 0 0 0 1px var(--amber);
 }

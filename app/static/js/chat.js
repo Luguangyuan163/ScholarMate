@@ -524,6 +524,8 @@ window.chatApp = function () {
         width: ((seg.bbox[2] - seg.bbox[0]) / seg.page_width) * 100 + "%",
         fontWeight: seg.bold ? 700 : 400,
       };
+      const boxHeight = ((seg.bbox[3] - seg.bbox[1]) / seg.page_height) * 100;
+      if (boxHeight > 0) style.minHeight = boxHeight + "%";
       if (scale > 0 && seg.font_size) {
         style.fontSize = Math.max(10, seg.font_size * scale * 1.35) + "px";
       }
