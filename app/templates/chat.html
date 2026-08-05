@@ -60,6 +60,11 @@
       </form>
       <div class="row">
         <label>
+          段落上限
+          <input type="number" x-model.number="translation.maxParagraphs" min="0"
+                 placeholder="0=全部" :disabled="translation.busy">
+        </label>
+        <label>
           从论文库选择
           <select x-model="translation.selectedPdf" @change="translateSelect()" :disabled="translation.busy">
             <option value="">-- 选择已上传论文 --</option>

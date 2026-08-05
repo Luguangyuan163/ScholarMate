@@ -10,6 +10,7 @@ import aiofiles
 import httpx
 from fastapi import APIRouter, Depends, File, HTTPException, Query, Request, UploadFile
 from fastapi.responses import FileResponse, StreamingResponse
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.concurrency import run_in_threadpool
 
@@ -21,6 +22,7 @@ from app.schemas.pdf import PDFImportRequest, PDFUploadResponse, TranslateReques
 
 router = APIRouter(prefix="/api/pdf", tags=["pdf"])
 TRANSLATE_CHUNK_CHARS = 2000
+TRANSLATE_BATCH_SIZE = 4
 DOWNLOAD_TIMEOUT_SECONDS = 30.0
 DOWNLOAD_USER_AGENT = "ScholarMate/0.1 (graduation project)"
 
@@ -203,30 +205,85 @@ async def _translate_events(
     row,
     payload: TranslateRequest,
 ):
-    """提取全文 → 分块 → 逐段翻译，产出 SSE 事件（progress/segment/done/error）。"""
+    """提取全文 → 分块 → 复用缓存 + 批量翻译，产出 SSE 事件。"""
     result = await run_in_threadpool(pdf_service.extract, row.file_path)
     chunks = pdf_service.chunk_paragraphs(result.text, max_chars=TRANSLATE_CHUNK_CHARS)
     if payload.max_paragraphs > 0:
         chunks = chunks[: payload.max_paragraphs]
     total = len(chunks)
     yield {"type": "progress", "done": 0, "total": total}
-    segments = []
+
+    cache = await _load_translation_cache(request, row, payload.target_lang)
+    segments_by_index: dict[int, dict] = {}
+    pending_indexes: list[int] = []
+    pending_texts: list[str] = []
+
     for index, chunk in enumerate(chunks):
+        cached = cache.get(chunk)
+        if cached is not None:
+            segments_by_index[index] = {"source": chunk, "translation": cached}
+            yield {
+                "type": "segment",
+                "index": index,
+                "source": chunk,
+                "translation": cached,
+                "total": total,
+            }
+        else:
+            pending_indexes.append(index)
+            pending_texts.append(chunk)
+
+    if pending_texts:
         try:
-            translated = await translation.translate_paragraph(chunk, payload.target_lang)
+            async for offset, translated in translation.translate_paragraphs(
+                pending_texts,
+                payload.target_lang,
+                batch_size=TRANSLATE_BATCH_SIZE,
+            ):
+                index = pending_indexes[offset]
+                segments_by_index[index] = {
+                    "source": chunks[index],
+                    "translation": translated,
+                }
+                yield {
+                    "type": "segment",
+                    "index": index,
+                    "source": chunks[index],
+                    "translation": translated,
+                    "total": total,
+                }
         except Exception as exc:
-            yield {"type": "error", "content": f"第 {index + 1} 段翻译失败: {exc}"}
+            yield {"type": "error", "content": f"翻译失败: {exc}"}
             return
-        segments.append({"source": chunk, "translation": translated})
-        yield {
-            "type": "segment",
-            "index": index,
-            "source": chunk,
-            "translation": translated,
-            "total": total,
-        }
+
+    segments = [segments_by_index[index] for index in sorted(segments_by_index)]
     await _save_translation(request, row, payload.target_lang, segments)
     yield {"type": "done", "total": total}
+
+
+async def _load_translation_cache(
+    request: Request, row, target_lang: str
+) -> dict[str, str]:
+    """读取该 PDF 最近一次同语言翻译记录，作为断点续翻缓存。"""
+    db = request.app.state.database
+    async with db.session_factory() as session:
+        record = await session.scalar(
+            select(TranslationRecord)
+            .where(
+                TranslationRecord.pdf_id == row.id,
+                TranslationRecord.target_lang == target_lang,
+            )
+            .order_by(TranslationRecord.created_at.desc())
+            .limit(1)
+        )
+        if record is None:
+            return {}
+        segments = json.loads(record.segments_json or "[]")
+    return {
+        segment["source"]: segment["translation"]
+        for segment in segments
+        if segment.get("source") is not None
+    }
 
 
 async def _save_translation(request: Request, row, target_lang: str, segments: list) -> None:

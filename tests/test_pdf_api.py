@@ -72,6 +72,11 @@ class FakeTranslation:
         self.calls.append(text)
         return f"[{target_lang}] {text}"
 
+    async def translate_paragraphs(self, paragraphs, target_lang="zh", batch_size=4):
+        for offset, text in enumerate(paragraphs):
+            self.calls.append(text)
+            yield offset, f"[{target_lang}] {text}"
+
 
 def test_upload_pdf_and_local_search(app_settings, tmp_path):
     pdf_path = tmp_path / "demo.pdf"
@@ -300,6 +305,9 @@ def test_translate_pdf_get_stream_endpoint(app_settings, tmp_path):
 def test_translate_pdf_reports_llm_error(app_settings, tmp_path):
     class FailingTranslation:
         async def translate_paragraph(self, text, target_lang="zh"):
+            raise RuntimeError("llm down")
+
+        async def translate_paragraphs(self, paragraphs, target_lang="zh", batch_size=4):
             raise RuntimeError("llm down")
 
     pdf_path = tmp_path / "err.pdf"

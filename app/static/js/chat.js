@@ -16,6 +16,7 @@ window.chatApp = function () {
       records: [],
       segments: [],
       status: "",
+      maxParagraphs: 0,
       busy: false,
       source: null,
     },
@@ -342,7 +343,11 @@ window.chatApp = function () {
       const resp = await fetch("/api/translations/" + record.id);
       if (!resp.ok) return;
       const data = await resp.json();
-      this.translation.segments = data.segments;
+      this.translation.segments = data.segments.map((seg, index) => ({
+        index: index,
+        source: seg.source,
+        translation: seg.translation,
+      }));
       this.translation.pdfName = data.filename;
       this.translation.status =
         "已加载保存的翻译版本（" + (data.created_at || "").slice(0, 16) + "）";
@@ -411,7 +416,7 @@ window.chatApp = function () {
       this.translation.status = "准备翻译…";
       const params = new URLSearchParams({
         target_lang: "zh",
-        max_paragraphs: "0",
+        max_paragraphs: String(this.translation.maxParagraphs || 0),
       });
       this.closeTranslationSource();
       const source = new EventSource(
@@ -460,9 +465,11 @@ window.chatApp = function () {
           "翻译进度 " + payload.done + "/" + payload.total;
       } else if (type === "segment") {
         this.translation.segments.push({
+          index: payload.index,
           source: payload.source,
           translation: payload.translation,
         });
+        this.translation.segments.sort((a, b) => a.index - b.index);
         this.translation.status =
           "翻译进度 " + (payload.index + 1) + "/" + payload.total;
       } else if (type === "done") {
