@@ -16,8 +16,10 @@ class FakeS2:
         self.search_calls = 0
         self.detail_calls = 0
 
-    async def search(self, query, limit=10):
+    async def search(self, query, limit=10, year_from=None, year_to=None):
         self.search_calls += 1
+        self.last_year_from = year_from
+        self.last_year_to = year_to
         if self.error:
             raise self.error
         return self.items
@@ -36,7 +38,7 @@ class FakeOpenAlex:
         self.search_calls = 0
         self.detail_calls = 0
 
-    async def search(self, query, limit=10):
+    async def search(self, query, limit=10, year_from=None, year_to=None):
         self.search_calls += 1
         if self.error:
             raise self.error
@@ -84,6 +86,16 @@ async def test_uses_openalex_directly_without_key():
     items = await source.search("LoRA")
     assert items[0].source == "openalex"
     assert s2.search_calls == 0
+
+
+async def test_forwards_year_range_to_selected_source():
+    s2 = FakeS2(items=[_item("s2")])
+    source = FallbackMetadataSource(
+        s2=s2, openalex=FakeOpenAlex(items=[_item("openalex")]), prefer_s2=True
+    )
+    await source.search("LoRA", limit=5, year_from=2025, year_to=2026)
+    assert s2.last_year_from == 2025
+    assert s2.last_year_to == 2026
 
 
 async def test_detail_falls_back_to_openalex():

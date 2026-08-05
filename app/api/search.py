@@ -93,10 +93,20 @@ async def _search_metadata(
 ) -> tuple[list[PaperItem], str]:
     """优先 S2，失败（如无 key 被限流）时回退 OpenAlex。"""
     try:
-        items = await s2.search(payload.query, limit=payload.max_results)
+        items = await s2.search(
+            payload.query,
+            limit=payload.max_results,
+            year_from=payload.year_from,
+            year_to=payload.year_to,
+        )
         return items, "s2"
     except httpx.HTTPError:
-        items = await openalex.search(payload.query, limit=payload.max_results)
+        items = await openalex.search(
+            payload.query,
+            limit=payload.max_results,
+            year_from=payload.year_from,
+            year_to=payload.year_to,
+        )
         return items, "openalex"
 
 

@@ -86,6 +86,27 @@ async def test_search_omits_mailto_when_unset():
     assert "mailto" not in client.last_params
 
 
+async def test_search_sends_single_year_filter():
+    client = FakeOpenAlexClient(OPENALEX_JSON)
+    service = OpenAlexService(client=client)
+    await service.search("LoRA", limit=5, year_from=2026, year_to=2026)
+    assert client.last_params["filter"] == "publication_year:2026"
+
+
+async def test_search_sends_year_range_filter():
+    client = FakeOpenAlexClient(OPENALEX_JSON)
+    service = OpenAlexService(client=client)
+    await service.search("LoRA", limit=5, year_from=2024, year_to=2026)
+    assert client.last_params["filter"] == "publication_year:2024-2026"
+
+
+async def test_search_omits_year_filter_when_unset():
+    client = FakeOpenAlexClient(OPENALEX_JSON)
+    service = OpenAlexService(client=client)
+    await service.search("LoRA", limit=5)
+    assert "filter" not in client.last_params
+
+
 async def test_get_paper_detail_requests_work_and_normalizes():
     detail = {
         "id": "https://openalex.org/W2741809807",

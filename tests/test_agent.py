@@ -109,7 +109,7 @@ async def test_search_arxiv_tool_returns_json():
 
 async def test_search_s2_tool_falls_back_to_openalex():
     class BrokenS2:
-        async def search(self, query, limit=10):
+        async def search(self, query, limit=10, year_from=None, year_to=None):
             raise httpx.HTTPStatusError(
                 "429",
                 request=httpx.Request("GET", "https://api.semanticscholar.org"),
@@ -117,7 +117,7 @@ async def test_search_s2_tool_falls_back_to_openalex():
             )
 
     class FakeOpenAlex:
-        async def search(self, query, limit=10):
+        async def search(self, query, limit=10, year_from=None, year_to=None):
             return [
                 PaperItem(
                     title="OpenAlex Paper",
@@ -140,6 +140,28 @@ async def test_search_s2_tool_falls_back_to_openalex():
     payload = json.loads(output)
     assert payload[0]["source"] == "openalex"
     assert payload[0]["citation_count"] == 88
+
+
+async def test_search_arxiv_tool_forwards_year_range():
+    class RecordingArxiv:
+        def __init__(self) -> None:
+            self.calls = []
+
+        async def search(self, query, max_results=10, year_from=None, year_to=None):
+            self.calls.append((query, max_results, year_from, year_to))
+            return []
+
+    recording = RecordingArxiv()
+    tools2 = build_tools(
+        arxiv=recording,
+        s2=None,
+        openalex=None,
+        embedding=None,
+        vector_store=None,
+        translation=None,
+    )
+    await tools2[0].func(query="LoRA", max_results=5, year_from=2025, year_to=2026)
+    assert recording.calls == [("LoRA", 5, 2025, 2026)]
 
 
 async def test_get_paper_detail_tool_returns_normalized_json():

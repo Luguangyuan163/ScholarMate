@@ -156,6 +156,7 @@ ScholarMate 是基于大语言模型（LLM）的学术助手，交付形态为 *
 | 主力 LLM | DeepSeek `deepseek-v4-flash` / `deepseek-v4-pro` | 性价比高、国内直连、兼容 OpenAI SDK |
 | Agent 框架 | 自建 ReAct 主循环（约 200 行） | 展示核心机制；规避第三方框架版本兼容风险 |
 | 检索数据源 | arXiv（主）+ Semantic Scholar（引用量）+ OpenAlex（免 key 备用） | 引用量排序优先 S2 citationCount，不可用时回退 OpenAlex cited_by_count |
+| 年份过滤 | 今年/去年/任意年份范围（year_from / year_to） | arXiv submittedDate、S2 year 参数、OpenAlex publication_year filter；Agent 自然语言自动解析 |
 | 流式方案 | SSE（POST + fetch 流式解析） | EventSource 仅支持 GET，POST 接口需用 fetch 解析 |
 | 打包 | PyInstaller（one-folder）+ 可选 Inno Setup | 产出免 Python 环境的 exe；数据目录运行时生成 |
 

@@ -39,8 +39,16 @@ class SemanticScholarService:
         self._last_request_at = 0.0
         self._lock = asyncio.Lock()
 
-    async def search(self, query: str, limit: int = 10) -> list[PaperItem]:
+    async def search(
+        self,
+        query: str,
+        limit: int = 10,
+        year_from: int | None = None,
+        year_to: int | None = None,
+    ) -> list[PaperItem]:
         params = {"query": query, "limit": limit, "fields": S2_FIELDS}
+        if year_from is not None or year_to is not None:
+            params["year"] = _year_range(year_from, year_to)
         headers = {"x-api-key": self._api_key} if self._api_key else {}
         response = await self._get(S2_SEARCH_URL, params=params, headers=headers)
         return _parse_s2_response(response.json())
@@ -74,6 +82,14 @@ class SemanticScholarService:
         if wait > 0:
             await asyncio.sleep(wait)
         self._last_request_at = time.monotonic()
+
+
+def _year_range(year_from: int | None, year_to: int | None) -> str:
+    start = year_from if year_from is not None else year_to
+    end = year_to if year_to is not None else year_from
+    if start is not None and end is not None and start != end:
+        return f"{start}-{end}"
+    return str(start if start is not None else end)
 
 
 def _parse_s2_response(data: dict) -> list[PaperItem]:

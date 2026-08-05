@@ -66,11 +66,11 @@ def test_search_arxiv_unreachable_returns_502(app_settings):
             raise httpx.ReadTimeout("arxiv timeout")
 
     class UnreachableS2:
-        async def search(self, query, limit=10):
+        async def search(self, query, limit=10, year_from=None, year_to=None):
             raise httpx.ConnectError("s2 down")
 
     class UnreachableOpenAlex:
-        async def search(self, query, limit=10):
+        async def search(self, query, limit=10, year_from=None, year_to=None):
             raise httpx.ConnectError("openalex down")
 
     app = create_app(app_settings)
@@ -89,7 +89,7 @@ def test_search_falls_back_to_s2(app_settings):
             raise httpx.ReadTimeout("arxiv down")
 
     class FakeS2:
-        async def search(self, query, limit=10):
+        async def search(self, query, limit=10, year_from=None, year_to=None):
             return [PaperItem(title="S2 Result", source="s2", external_id="9")]
 
     app = create_app(app_settings)
@@ -103,7 +103,7 @@ def test_search_falls_back_to_s2(app_settings):
 
 def test_search_s2_falls_back_to_openalex(app_settings):
     class BrokenS2:
-        async def search(self, query, limit=10):
+        async def search(self, query, limit=10, year_from=None, year_to=None):
             raise httpx.HTTPStatusError(
                 "429",
                 request=httpx.Request("GET", "https://api.semanticscholar.org"),
@@ -111,7 +111,7 @@ def test_search_s2_falls_back_to_openalex(app_settings):
             )
 
     class FakeOpenAlex:
-        async def search(self, query, limit=10):
+        async def search(self, query, limit=10, year_from=None, year_to=None):
             return [PaperItem(title="OpenAlex Result", source="openalex", external_id="W1")]
 
     app = create_app(app_settings)

@@ -86,14 +86,29 @@ def build_tools(arxiv, s2, openalex, embedding, vector_store, translation) -> li
 def _search_params() -> dict:
     return {
         "type": "object",
-        "properties": {"query": {"type": "string"}},
+        "properties": {
+            "query": {"type": "string"},
+            "max_results": {"type": "integer", "description": "返回条数，默认 5"},
+            "year_from": {"type": "integer", "description": "发布年份下限，如 2025"},
+            "year_to": {"type": "integer", "description": "发布年份上限，如 2026"},
+        },
         "required": ["query"],
     }
 
 
 def _make_search_arxiv(arxiv):
-    async def search_arxiv(query: str, max_results: int = 5) -> str:
-        items = await arxiv.search(query, max_results=int(max_results))
+    async def search_arxiv(
+        query: str,
+        max_results: int = 5,
+        year_from: int | None = None,
+        year_to: int | None = None,
+    ) -> str:
+        items = await arxiv.search(
+            query,
+            max_results=int(max_results),
+            year_from=year_from,
+            year_to=year_to,
+        )
         payload = [
             {
                 "title": item.title,
@@ -110,8 +125,15 @@ def _make_search_arxiv(arxiv):
 
 
 def _make_search_s2(s2, openalex):
-    async def search_semantic_scholar(query: str, limit: int = 5) -> str:
-        items = await _metadata_search(s2, openalex, query, int(limit))
+    async def search_semantic_scholar(
+        query: str,
+        limit: int = 5,
+        year_from: int | None = None,
+        year_to: int | None = None,
+    ) -> str:
+        items = await _metadata_search(
+            s2, openalex, query, int(limit), year_from, year_to
+        )
         payload = [
             {
                 "title": item.title,
@@ -128,13 +150,24 @@ def _make_search_s2(s2, openalex):
     return search_semantic_scholar
 
 
-async def _metadata_search(s2, openalex, query: str, limit: int):
+async def _metadata_search(
+    s2,
+    openalex,
+    query: str,
+    limit: int,
+    year_from: int | None = None,
+    year_to: int | None = None,
+):
     if s2 is not None:
         try:
-            return await s2.search(query, limit=limit)
+            return await s2.search(
+                query, limit=limit, year_from=year_from, year_to=year_to
+            )
         except httpx.HTTPError:
             pass
-    return await openalex.search(query, limit=limit)
+    return await openalex.search(
+        query, limit=limit, year_from=year_from, year_to=year_to
+    )
 
 
 def _make_search_local(embedding, vector_store):

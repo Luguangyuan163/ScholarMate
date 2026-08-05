@@ -41,10 +41,18 @@ class OpenAlexService:
         self._last_request_at = 0.0
         self._lock = asyncio.Lock()
 
-    async def search(self, query: str, limit: int = 10) -> list[PaperItem]:
+    async def search(
+        self,
+        query: str,
+        limit: int = 10,
+        year_from: int | None = None,
+        year_to: int | None = None,
+    ) -> list[PaperItem]:
         params = {"search": query, "per-page": limit}
         if self._mailto:
             params["mailto"] = self._mailto
+        if year_from is not None or year_to is not None:
+            params["filter"] = _year_filter(year_from, year_to)
         response = await self._get(OPENALEX_WORKS_URL, params=params)
         return _parse_openalex_response(response.json())
 
@@ -122,3 +130,11 @@ def _reconstruct_abstract(inverted_index: dict | None) -> str:
         for index in indexes:
             positions[index] = word
     return " ".join(positions[i] for i in sorted(positions))
+
+
+def _year_filter(year_from: int | None, year_to: int | None) -> str:
+    start = year_from if year_from is not None else year_to
+    end = year_to if year_to is not None else year_from
+    if start is not None and end is not None and start != end:
+        return f"publication_year:{start}-{end}"
+    return f"publication_year:{start if start is not None else end}"

@@ -65,6 +65,27 @@ async def test_search_sends_query_fields_and_key():
     assert client.last_headers["x-api-key"] == "test-key"
 
 
+async def test_search_sends_single_year_param():
+    client = FakeS2Client(S2_JSON)
+    service = SemanticScholarService(client=client)
+    await service.search("LoRA", limit=5, year_from=2026, year_to=2026)
+    assert client.last_params["year"] == "2026"
+
+
+async def test_search_sends_year_range_param():
+    client = FakeS2Client(S2_JSON)
+    service = SemanticScholarService(client=client)
+    await service.search("LoRA", limit=5, year_from=2024, year_to=2026)
+    assert client.last_params["year"] == "2024-2026"
+
+
+async def test_search_omits_year_param_when_unset():
+    client = FakeS2Client(S2_JSON)
+    service = SemanticScholarService(client=client)
+    await service.search("LoRA", limit=5)
+    assert "year" not in client.last_params
+
+
 async def test_get_paper_detail_sends_fields():
     class FakeDetailResponse:
         def raise_for_status(self):
