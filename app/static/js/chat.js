@@ -443,6 +443,9 @@ window.chatApp = function () {
         this.translation.pageCount = Math.max(
           ...this.translation.segments.map((seg) => seg.page || 0),
         );
+        if (this.translation.pageCount && !this.translation.previewOpen) {
+          this.translation.previewOpen = true;
+        }
       }
       this.translation.pdfName = data.filename;
       if (!this.translation.pdfId) {
@@ -522,7 +525,7 @@ window.chatApp = function () {
         fontWeight: seg.bold ? 700 : 400,
       };
       if (scale > 0 && seg.font_size) {
-        style.fontSize = Math.max(5, seg.font_size * scale) + "px";
+        style.fontSize = Math.max(10, seg.font_size * scale * 1.35) + "px";
       }
       return style;
     },

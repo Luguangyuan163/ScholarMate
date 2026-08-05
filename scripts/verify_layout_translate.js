@@ -44,6 +44,9 @@ async function run() {
     page.on("console", (msg) => {
       if (msg.type() === "error") errors.push("CONSOLE " + msg.text());
     });
+    page.on("response", (resp) => {
+      if (resp.status() >= 400) console.log("HTTP " + resp.status() + " " + resp.url());
+    });
 
     await page.setRequestInterception(true);
     page.on("request", (req) => {
@@ -109,6 +112,12 @@ async function run() {
     await sleep(200);
     const modeAfter = await page.evaluate(
       () => document.querySelector(".layout-pages").className,
+    );
+    const contrastSrcVisible = await page.evaluate(
+      () => {
+        const src = document.querySelector(".layout-para-src");
+        return src !== null && getComputedStyle(src).display !== "none";
+      },
     );
 
     await page.evaluate(() => {
@@ -185,14 +194,17 @@ async function run() {
     ) {
       failures.push("译文坐标未对齐: " + JSON.stringify(layoutState));
     }
-    if (!layoutState.fontSize || parseFloat(layoutState.fontSize) <= 0) {
-      failures.push("译文字号未应用: " + JSON.stringify(layoutState));
+    if (!layoutState.fontSize || parseFloat(layoutState.fontSize) <= 9) {
+      failures.push("译文字号过小: " + JSON.stringify(layoutState));
     }
     if (layoutState.secondFontWeight !== "700") {
       failures.push("加粗段落未应用粗体: " + JSON.stringify(layoutState));
     }
     if (!modeBefore.includes("mode-translation") || !modeAfter.includes("mode-contrast")) {
       failures.push("对照/译文模式切换异常: " + modeBefore + " -> " + modeAfter);
+    }
+    if (!contrastSrcVisible) {
+      failures.push("对照模式下原文未随段落显示");
     }
     if (!hoverState.zoneKey || hoverState.zoneKey !== hoverState.hoveredKey) {
       failures.push("悬停双向定位异常: " + JSON.stringify(hoverState));

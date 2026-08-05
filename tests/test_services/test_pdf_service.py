@@ -210,12 +210,16 @@ def test_extract_layout_skips_figure_and_table_text(tmp_path):
     assert not any("Cell" in text for text in texts)
 
 
-def test_fit_font_size_shrinks_long_translation_only():
+def test_fit_font_size_shrinks_only_when_much_longer():
     long_text = (
         "低秩适配（LoRA）通过将低秩矩阵注入大模型的权重来减少可训练参数的"
         "数量，使微调更高效且节省内存，同时保持模型性能。"
     )
-    fitted = fit_font_size(long_text, 11, 428)
+    # 段框足够高时保持原字号（译文行数在原文行数 2.2 倍以内不缩）
+    assert fit_font_size(long_text, 11, 428, 120) == 11
+    # 段框很矮且译文明显超长时才缩字号，且不低于原字号 0.7 倍
+    fitted = fit_font_size(long_text, 11, 200, 18)
     assert fitted < 11
-    assert fitted >= 11 * 0.45
-    assert fit_font_size("短文。", 11, 428) == 11
+    assert fitted >= 11 * 0.7
+    assert fit_font_size("短文。", 11, 428, 20) == 11
+    assert fit_font_size("Short text.", 11, 428, 20) == 11

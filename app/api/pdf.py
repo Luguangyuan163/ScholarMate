@@ -452,7 +452,13 @@ def _layout_segment(paragraph, translation: str) -> dict:
         "source": paragraph.text,
         "translation": translation,
         "font_size": round(
-            fit_font_size(translation, paragraph.font_size, bbox[2] - bbox[0]), 1
+            fit_font_size(
+                translation,
+                paragraph.font_size,
+                bbox[2] - bbox[0],
+                bbox[3] - bbox[1],
+            ),
+            1,
         ),
         "bold": paragraph.bold,
     }

@@ -127,7 +127,9 @@
                  :data-para="seg.page + '-' + seg.index" :style="layoutParaStyle(seg)"
                  @mouseenter="hoverPara(seg)" @mouseleave="hoverPara(null)"
                  @click="focusPara(seg, $event)">
-              <div class="layout-para-src" x-show="seg.showSrc" x-text="seg.source"></div>
+              <div class="layout-para-src"
+                   x-show="translation.rightMode === 'contrast' || seg.showSrc"
+                   x-text="seg.source"></div>
               <div class="layout-para-trans" x-text="seg.translation"></div>
             </div>
           </template>

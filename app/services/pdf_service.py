@@ -197,15 +197,30 @@ class PDFService:
         return chunks
 
 
-def fit_font_size(text: str, font_size: float, bbox_width: float) -> float:
-    """按译文长度与段落框宽估算合适的展示字号（CJK约1em、拉丁约0.5em）。"""
+def fit_font_size(
+    text: str, font_size: float, bbox_width: float, bbox_height: float | None = None
+) -> float:
+    """按译文长度与段落框尺寸估算合适的展示字号。
+
+    允许译文行数最多达到原文行数的 2.2 倍（中文比英文密，行数翻倍属正常），
+    仅当明显超出时才缩字号，下限为原字号的 0.7，避免长段落被压到不可读。
+    """
     if bbox_width <= 0 or font_size <= 0:
         return font_size
     estimated_pt = _text_width_em(text) * font_size
     if estimated_pt <= bbox_width:
         return font_size
+    if bbox_height and bbox_height > 0:
+        line_height = font_size * 1.35
+        source_lines = max(1.0, bbox_height / line_height)
+        target_lines = max(1.0, source_lines * 2.2)
+        needed_lines = max(1.0, estimated_pt / bbox_width)
+        if needed_lines <= target_lines:
+            return font_size
+        fitted = font_size * (target_lines * bbox_width) / estimated_pt
+        return max(font_size * 0.7, fitted)
     fitted = font_size * bbox_width / estimated_pt
-    return max(font_size * 0.45, fitted)
+    return max(font_size * 0.7, fitted)
 
 
 def _normalize_text(text: str) -> str:

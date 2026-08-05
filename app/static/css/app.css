@@ -1009,6 +1009,8 @@ button.sidebar-item {
 
 .layout-pages.mode-contrast .layout-para {
   color: var(--accent-deep);
+  background: rgba(255, 253, 248, 0.88);
+  box-shadow: 0 0 0 1px rgba(200, 192, 176, 0.55);
 }
 
 .layout-para:hover,
@@ -1018,7 +1020,7 @@ button.sidebar-item {
 }
 
 .layout-para-src {
-  font-size: 0.72em;
+  font-size: 0.8em;
   color: var(--muted);
   border-bottom: 1px dashed var(--line-strong);
   margin-bottom: 3px;
