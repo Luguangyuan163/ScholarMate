@@ -3,7 +3,6 @@ window.appSidebar = function () {
   return {
     conversations: [],
     uploaded: [],
-    collection: [],
     loading: true,
     currentId: null,
     autoSave: false,
@@ -32,12 +31,8 @@ window.appSidebar = function () {
     },
 
     async loadLibrary() {
-      const [pdfResp, colResp] = await Promise.all([
-        fetch("/api/papers"),
-        fetch("/api/papers/collection"),
-      ]);
+      const pdfResp = await fetch("/api/papers");
       if (pdfResp.ok) this.uploaded = await pdfResp.json();
-      if (colResp.ok) this.collection = await colResp.json();
     },
 
     newConversation() {
@@ -97,16 +92,6 @@ window.appSidebar = function () {
       if (!resp.ok) {
         const body = await resp.json().catch(() => ({}));
         alert("删除失败: " + (body.detail || ("HTTP " + resp.status)));
-        return;
-      }
-      window.dispatchEvent(new CustomEvent("library:changed"));
-    },
-
-    async deleteCollection(p) {
-      if (!confirm("确定删除收藏《" + p.title + "》？")) return;
-      const resp = await fetch("/api/papers/collection/" + p.id, { method: "DELETE" });
-      if (!resp.ok) {
-        alert("删除失败: HTTP " + resp.status);
         return;
       }
       window.dispatchEvent(new CustomEvent("library:changed"));

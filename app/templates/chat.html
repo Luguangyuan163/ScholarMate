@@ -33,8 +33,10 @@
 
     <div class="save-bar" x-show="suggestPapers.length">
       <span x-text="'本次对话发现 ' + suggestPapers.length + ' 篇论文，要存入本地论文库吗？'"></span>
-      <button class="btn btn-sm" @click="savePapers()">存入论文库</button>
-      <button class="btn btn-sm btn-outline" @click="suggestPapers = []">忽略</button>
+      <button class="btn btn-sm" @click="savePapers()" :disabled="saveBusy"
+              x-text="saveBusy ? '下载保存中…' : '存入论文库'">存入论文库</button>
+      <button class="btn btn-sm btn-outline" @click="suggestPapers = []"
+              :disabled="saveBusy">忽略</button>
     </div>
 
     <form class="chat-input" @submit.prevent="send()">

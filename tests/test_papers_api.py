@@ -1,9 +1,16 @@
-"""论文库管理接口测试：列表、删除与路径越界防护。"""
+"""论文库管理接口测试：本地 PDF 入库（自动下载）、单项/批量删除与路径防护。"""
 
 from __future__ import annotations
 
+import asyncio
+import time
+from types import SimpleNamespace
+
+import fitz
+import httpx
 from fastapi.testclient import TestClient
 
+import app.api.papers as papers_api
 from app.main import create_app
 from app.models.uploaded_pdf import UploadedPDF
 
@@ -26,9 +33,43 @@ def _insert_paper(app, **kwargs) -> int:
             await session.refresh(row)
             return row.id
 
-    import asyncio
-
     return asyncio.run(_insert())
+
+
+def _make_pdf_bytes() -> bytes:
+    doc = fitz.open()
+    page = doc.new_page()
+    page.insert_text((72, 72), "LoRA paper.")
+    data = doc.tobytes()
+    doc.close()
+    return data
+
+
+class FakeEmbeddings:
+    async def create(self, **kwargs):
+        n = len(kwargs["input"])
+        return SimpleNamespace(data=[SimpleNamespace(embedding=[0.1] * 8) for _ in range(n)])
+
+
+class FakeEmbeddingService:
+    def __init__(self) -> None:
+        self._client = FakeEmbeddings()
+
+    async def embed_texts(self, texts: list[str], on_batch=None) -> list[list[float]]:
+        response = await self._client.create(model="x", input=texts)
+        if on_batch is not None:
+            on_batch(len(texts), len(texts))
+        return [item.embedding for item in response.data]
+
+
+def _wait_pdf_status(client, pdf_id: int, expected: str, timeout: float = 5.0) -> dict:
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        body = client.get(f"/api/pdf/{pdf_id}/status").json()
+        if body["status"] == expected:
+            return body
+        time.sleep(0.05)
+    raise AssertionError(f"pdf {pdf_id} 未在 {timeout}s 内变为 {expected}")
 
 
 def test_delete_paper_removes_row_and_file(app_settings, tmp_path):
@@ -140,9 +181,8 @@ def test_batch_delete_ignores_missing_ids(app_settings):
     assert resp.json() == {"deleted": 1, "requested": 2}
 
 
-def test_import_papers_dedupes_and_lists(app_settings):
-    app = create_app(app_settings)
-    paper = {
+def _paper_item(**overrides) -> dict:
+    item = {
         "title": "LoRA: Low-Rank Adaptation",
         "authors": ["Edward Hu"],
         "abstract": "We propose low-rank adaptation.",
@@ -151,86 +191,124 @@ def test_import_papers_dedupes_and_lists(app_settings):
         "year": 2021,
         "citation_count": 2509,
         "url": "https://arxiv.org/abs/2106.09685",
+        "pdf_url": "https://arxiv.org/pdf/2106.09685",
     }
-    with TestClient(app) as client:
-        first = client.post("/api/papers/import", json={"papers": [paper]})
-        assert first.status_code == 200
-        assert first.json() == {"imported": 1, "updated": 0, "skipped": 0}
-
-        again = client.post("/api/papers/import", json={"papers": [paper]})
-        assert again.json() == {"imported": 0, "updated": 0, "skipped": 1}
-
-        collection = client.get("/api/papers/collection")
-        assert collection.status_code == 200
-        assert len(collection.json()) == 1
-        assert collection.json()[0]["citation_count"] == 2509
+    item.update(overrides)
+    return item
 
 
-def test_import_updates_citation_count_on_reimport(app_settings):
+def test_import_pdf_downloads_and_stores(app_settings, monkeypatch):
+    captured: dict[str, str] = {}
+
+    async def fake_download(url: str) -> bytes:
+        captured["url"] = url
+        return _make_pdf_bytes()
+
+    monkeypatch.setattr(papers_api, "_download_pdf", fake_download)
     app = create_app(app_settings)
-    paper = {
-        "title": "LoRA",
-        "source": "arxiv",
-        "external_id": "2106.09685",
-        "authors": [],
-        "abstract": "",
-        "year": 2021,
-        "citation_count": 100,
-        "url": "",
-    }
-    newer = {**paper, "citation_count": 2600}
+    app.state.embedding_service = FakeEmbeddingService()
+
     with TestClient(app) as client:
-        client.post("/api/papers/import", json={"papers": [paper]})
-        resp = client.post("/api/papers/import", json={"papers": [newer]})
-        assert resp.json() == {"imported": 0, "updated": 1, "skipped": 0}
-        assert client.get("/api/papers/collection").json()[0]["citation_count"] == 2600
-
-
-def test_import_stores_and_updates_pdf_url(app_settings):
-    app = create_app(app_settings)
-    paper = {
-        "title": "LoRA",
-        "source": "arxiv",
-        "external_id": "2106.09685",
-        "authors": [],
-        "abstract": "",
-        "year": 2021,
-        "citation_count": 100,
-        "url": "https://arxiv.org/abs/2106.09685",
-        "pdf_url": "https://arxiv.org/pdf/2106.09685v1",
-    }
-    with TestClient(app) as client:
-        client.post("/api/papers/import", json={"papers": [paper]})
-        saved = client.get("/api/papers/collection").json()[0]
-        assert saved["pdf_url"] == "https://arxiv.org/pdf/2106.09685v1"
-
-        newer = {
-            **paper,
-            "citation_count": 101,
-            "pdf_url": "https://arxiv.org/pdf/2106.09685v2",
-        }
-        resp = client.post("/api/papers/import", json={"papers": [newer]})
-        assert resp.json() == {"imported": 0, "updated": 1, "skipped": 0}
-        assert client.get("/api/papers/collection").json()[0]["pdf_url"] == (
-            "https://arxiv.org/pdf/2106.09685v2"
+        resp = client.post(
+            "/api/papers/import-pdf",
+            json={"papers": [_paper_item()]},
         )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["imported"] == 1
+        assert data["failed"] == []
+        assert captured["url"] == "https://arxiv.org/pdf/2106.09685"
+
+        papers = client.get("/api/papers").json()
+        assert len(papers) == 1
+        assert papers[0]["filename"] == "LoRA: Low-Rank Adaptation.pdf"
+        files = list(app.state.settings.pdf_upload_dir.glob("*.pdf"))
+        assert len(files) == 1
+        assert files[0].read_bytes().startswith(b"%PDF")
 
 
-def test_delete_collection_paper(app_settings):
+def test_import_pdf_derives_arxiv_url(app_settings, monkeypatch):
+    captured: dict[str, str] = {}
+
+    async def fake_download(url: str) -> bytes:
+        captured["url"] = url
+        return _make_pdf_bytes()
+
+    monkeypatch.setattr(papers_api, "_download_pdf", fake_download)
     app = create_app(app_settings)
-    paper = {
-        "title": "A",
-        "source": "s2",
-        "external_id": "abc",
-        "authors": [],
-        "abstract": "",
-        "year": 2020,
-        "citation_count": 1,
-        "url": "",
-    }
+    app.state.embedding_service = FakeEmbeddingService()
+
     with TestClient(app) as client:
-        client.post("/api/papers/import", json={"papers": [paper]})
-        paper_id = client.get("/api/papers/collection").json()[0]["id"]
-        deleted = client.delete(f"/api/papers/collection/{paper_id}")
-        assert deleted.status_code == 200
-        assert client.get("/api/papers/collection").json() == []
+        item = _paper_item(pdf_url="")
+        resp = client.post("/api/papers/import-pdf", json={"papers": [item]})
+    assert resp.status_code == 200
+    assert resp.json()["imported"] == 1
+    assert captured["url"] == "https://arxiv.org/pdf/2106.09685"
+
+
+def test_import_pdf_skips_papers_without_downloadable_link(app_settings):
+    app = create_app(app_settings)
+    with TestClient(app) as client:
+        item = _paper_item(source="s2", external_id="abc", pdf_url="", url="https://x.com/abs/abc")
+        resp = client.post("/api/papers/import-pdf", json={"papers": [item]})
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["imported"] == 0
+    assert data["failed"][0]["reason"] == "未找到可下载的 PDF 链接"
+
+
+def test_import_pdf_rejects_non_pdf_content(app_settings, monkeypatch):
+    async def fake_download(url: str) -> bytes:
+        return b"this is not a pdf"
+
+    monkeypatch.setattr(papers_api, "_download_pdf", fake_download)
+    app = create_app(app_settings)
+    with TestClient(app) as client:
+        resp = client.post(
+            "/api/papers/import-pdf",
+            json={"papers": [_paper_item()]},
+        )
+    data = resp.json()
+    assert data["imported"] == 0
+    assert data["failed"][0]["reason"] == "下载内容不是有效的 PDF"
+
+
+def test_import_pdf_reports_download_failure(app_settings, monkeypatch):
+    async def fake_download(url: str) -> bytes:
+        raise httpx.ConnectError("connection refused", request=httpx.Request("GET", url))
+
+    monkeypatch.setattr(papers_api, "_download_pdf", fake_download)
+    app = create_app(app_settings)
+    with TestClient(app) as client:
+        resp = client.post(
+            "/api/papers/import-pdf",
+            json={"papers": [_paper_item()]},
+        )
+    data = resp.json()
+    assert data["imported"] == 0
+    assert "下载失败" in data["failed"][0]["reason"]
+
+
+def test_import_pdf_skips_duplicate_title(app_settings, monkeypatch):
+    async def fake_download(url: str) -> bytes:
+        return _make_pdf_bytes()
+
+    monkeypatch.setattr(papers_api, "_download_pdf", fake_download)
+    app = create_app(app_settings)
+    app.state.embedding_service = FakeEmbeddingService()
+
+    with TestClient(app) as client:
+        first = client.post(
+            "/api/papers/import-pdf",
+            json={"papers": [_paper_item()]},
+        )
+        assert first.json()["imported"] == 1
+        pdf_id = client.get("/api/papers").json()[0]["id"]
+        _wait_pdf_status(client, pdf_id, "ready")
+        second = client.post(
+            "/api/papers/import-pdf",
+            json={"papers": [_paper_item()]},
+        )
+    data = second.json()
+    assert data["imported"] == 0
+    assert data["failed"][0]["reason"] == "已在论文库中"

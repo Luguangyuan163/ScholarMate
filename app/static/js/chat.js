@@ -4,6 +4,7 @@ window.chatApp = function () {
     messages: [],
     draft: "",
     busy: false,
+    saveBusy: false,
     conversationId: null,
     suggestPapers: [],
     collectedPapers: [],
@@ -244,25 +245,31 @@ window.chatApp = function () {
     },
 
     async savePapers() {
-      const resp = await fetch("/api/papers/import", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ papers: this.suggestPapers }),
-      });
-      if (resp.ok) {
-        const data = await resp.json();
-        this.suggestPapers = [];
-        this.pushMessage({ role: "assistant", content: this.importSummary(data) });
-        window.dispatchEvent(new CustomEvent("library:changed"));
-      } else {
-        alert("保存失败: HTTP " + resp.status);
+      if (this.saveBusy) return;
+      this.saveBusy = true;
+      try {
+        const resp = await fetch("/api/papers/import-pdf", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ papers: this.suggestPapers }),
+        });
+        if (resp.ok) {
+          const data = await resp.json();
+          this.suggestPapers = [];
+          this.pushMessage({ role: "assistant", content: this.importSummary(data) });
+          window.dispatchEvent(new CustomEvent("library:changed"));
+        } else {
+          alert("保存失败: HTTP " + resp.status);
+        }
+      } finally {
+        this.saveBusy = false;
       }
     },
 
     async autoSavePapers() {
       const papers = [...this.collectedPapers];
       this.collectedPapers = [];
-      const resp = await fetch("/api/papers/import", {
+      const resp = await fetch("/api/papers/import-pdf", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ papers: papers }),
@@ -271,7 +278,7 @@ window.chatApp = function () {
         const data = await resp.json();
         this.pushMessage({
           role: "assistant",
-          content: "已自动收藏论文：" + this.importSummary(data),
+          content: "已自动下载论文 PDF：" + this.importSummary(data),
         });
         window.dispatchEvent(new CustomEvent("library:changed"));
       }
@@ -279,10 +286,18 @@ window.chatApp = function () {
 
     importSummary(data) {
       const parts = [];
-      if (data.imported) parts.push("新增 " + data.imported + " 篇");
-      if (data.updated) parts.push("更新引用量 " + data.updated + " 篇");
-      if (data.skipped) parts.push("跳过重复 " + data.skipped + " 篇");
-      return parts.length ? parts.join("，") + "。" : "无变化。";
+      if (data.imported) parts.push("已下载保存 " + data.imported + " 篇 PDF");
+      const failed = data.failed || [];
+      if (failed.length) {
+        const reasons = failed
+          .map((f) => f.title + "（" + f.reason + "）")
+          .slice(0, 3)
+          .join("；");
+        parts.push(
+          failed.length + " 篇无法下载" + (reasons ? "：" + reasons : ""),
+        );
+      }
+      return parts.length ? parts.join("，") + "。" : "没有可存入的论文。";
     },
 
     async attachPdf(event) {

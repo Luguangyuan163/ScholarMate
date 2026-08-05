@@ -35,25 +35,8 @@ class Database:
 
 
 async def _migrate_sqlite(conn) -> None:
-    """轻量兼容迁移：为旧库补齐新列（无 Alembic，逐列幂等检查）。"""
-    _MIGRATIONS = [
-        (
-            "papers",
-            "pdf_url",
-            "ALTER TABLE papers ADD COLUMN pdf_url VARCHAR(500) NOT NULL DEFAULT ''",
-        ),
-    ]
-    for table, column, ddl in _MIGRATIONS:
-        rows = (await conn.execute(text(f"PRAGMA table_info({table})"))).all()
-        if column not in {row[1] for row in rows}:
-            await conn.execute(text(ddl))
-    # 数据回填：旧 arXiv 收藏补 PDF 直链（幂等）
-    await conn.execute(
-        text(
-            "UPDATE papers SET pdf_url = 'https://arxiv.org/pdf/' || external_id "
-            "WHERE source = 'arxiv' AND pdf_url = ''"
-        )
-    )
+    """轻量兼容迁移：本地论文库只保留本地 PDF，移除旧的链接论文表。"""
+    await conn.execute(text("DROP TABLE IF EXISTS papers"))
 
 
 def _enable_sqlite_pragmas(dbapi_connection, _connection_record) -> None:

@@ -44,18 +44,8 @@
               <button class="sidebar-del" type="button" title="删除论文" @click="deleteUploaded(p)">×</button>
             </div>
           </template>
-          <template x-for="p in collection" :key="'col-' + p.id">
-            <div class="sidebar-collection">
-              <a class="sidebar-item" :href="p.url || '#'" :target="p.url ? '_blank' : null">
-                <span class="item-title" x-text="p.title"></span>
-                <span class="sidebar-meta" x-text="'被引 ' + p.citation_count"></span>
-              </a>
-              <a class="sidebar-pdf" :href="p.pdf_url" target="_blank" x-show="p.pdf_url" title="打开 PDF">PDF</a>
-              <button class="sidebar-del" type="button" title="删除收藏" @click="deleteCollection(p)">×</button>
-            </div>
-          </template>
         </div>
-        <p class="sidebar-empty" x-show="!uploaded.length && !collection.length && !loading">暂无论文。</p>
+        <p class="sidebar-empty" x-show="!uploaded.length && !loading">暂无论文。</p>
         <label class="btn btn-outline btn-sm sidebar-upload">
           上传 PDF 入库
           <input type="file" accept="application/pdf" hidden @change="uploadPdf($event)">

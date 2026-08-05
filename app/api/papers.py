@@ -1,108 +1,56 @@
-"""论文库管理接口：列表与删除。"""
+"""论文库管理接口：本地 PDF 论文的列表、入库（自动下载 PDF）与删除。"""
 
 from __future__ import annotations
 
-import json
 from pathlib import Path
 from typing import Annotated
 
+import httpx
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.concurrency import run_in_threadpool
 
+from app.api.pdf import _download_pdf, _store_and_process
 from app.core.database import get_db
-from app.models.paper import Paper
 from app.models.uploaded_pdf import UploadedPDF
 from app.schemas.paper import BatchDeleteRequest, PaperImportRequest
 
 router = APIRouter(prefix="/api/papers", tags=["papers"])
 
 
-@router.post("/import")
-async def import_papers(
+@router.post("/import-pdf")
+async def import_papers_as_pdf(
     payload: PaperImportRequest,
-    session: Annotated[AsyncSession, Depends(get_db)],
+    request: Request,
 ) -> dict:
-    """批量收藏论文元数据；已存在时更新引用量/年份，保持论文库最新。"""
+    """把论文以 PDF 形式下载存入本地论文库；链接不可下载的跳过并说明原因。"""
     imported = 0
-    updated = 0
-    skipped = 0
+    failed: list[dict] = []
     for item in payload.papers:
-        exists = await session.execute(
-            select(Paper).where(
-                Paper.source == item.source,
-                Paper.external_id == item.external_id,
-            )
-        )
-        existing = exists.scalar_one_or_none()
-        if existing is not None:
-            if (
-                item.citation_count > existing.citation_count
-                or item.year != existing.year
-                or (item.pdf_url and item.pdf_url != existing.pdf_url)
-            ):
-                existing.citation_count = item.citation_count
-                existing.year = item.year
-                existing.url = item.url
-                existing.pdf_url = item.pdf_url
-                updated += 1
-            else:
-                skipped += 1
+        url = _resolve_pdf_url(item)
+        if not url:
+            failed.append({"title": item.title, "reason": "未找到可下载的 PDF 链接"})
             continue
-        session.add(
-            Paper(
-                title=item.title,
-                authors=json.dumps(item.authors, ensure_ascii=False),
-                abstract=item.abstract,
-                source=item.source,
-                external_id=item.external_id,
-                year=item.year,
-                citation_count=item.citation_count,
-                url=item.url,
-                pdf_url=item.pdf_url,
+        name = f"{item.title.strip()[:80]}.pdf" if item.title.strip() else "paper.pdf"
+        try:
+            content = await _download_pdf(url)
+        except httpx.HTTPError as exc:
+            failed.append({"title": item.title, "reason": f"下载失败: {exc}"})
+            continue
+        if not content.startswith(b"%PDF"):
+            failed.append({"title": item.title, "reason": "下载内容不是有效的 PDF"})
+            continue
+        async with request.app.state.database.session_factory() as session:
+            duplicate = await session.scalar(
+                select(UploadedPDF).where(UploadedPDF.original_name == name)
             )
-        )
+            if duplicate is not None:
+                failed.append({"title": item.title, "reason": "已在论文库中"})
+                continue
+            await _store_and_process(request, session, content, name)
         imported += 1
-    await session.commit()
-    return {"imported": imported, "updated": updated, "skipped": skipped}
-
-
-@router.get("/collection")
-async def list_collection(
-    session: Annotated[AsyncSession, Depends(get_db)],
-) -> list[dict]:
-    rows = (
-        await session.execute(select(Paper).order_by(Paper.created_at.desc()))
-    ).scalars().all()
-    return [
-        {
-            "id": row.id,
-            "title": row.title,
-            "authors": json.loads(row.authors or "[]"),
-            "abstract": row.abstract,
-            "source": row.source,
-            "external_id": row.external_id,
-            "year": row.year,
-            "citation_count": row.citation_count,
-            "url": row.url,
-            "pdf_url": row.pdf_url,
-        }
-        for row in rows
-    ]
-
-
-@router.delete("/collection/{paper_id}")
-async def delete_collection_paper(
-    paper_id: int,
-    session: Annotated[AsyncSession, Depends(get_db)],
-) -> dict:
-    row = await session.get(Paper, paper_id)
-    if row is None:
-        raise HTTPException(status_code=404, detail="论文不存在")
-    await session.delete(row)
-    await session.commit()
-    return {"deleted": paper_id}
+    return {"imported": imported, "failed": failed}
 
 
 @router.get("")
@@ -147,6 +95,15 @@ async def delete_paper(
     await session.delete(row)
     await session.commit()
     return {"deleted": pdf_id}
+
+
+def _resolve_pdf_url(item) -> str:
+    """优先使用论文的 PDF 直链；arXiv 收藏可推导官方 PDF 地址。"""
+    if item.pdf_url:
+        return item.pdf_url
+    if item.source == "arxiv" and item.external_id:
+        return f"https://arxiv.org/pdf/{item.external_id}"
+    return ""
 
 
 @router.post("/batch-delete")

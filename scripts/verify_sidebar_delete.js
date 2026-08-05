@@ -1,4 +1,4 @@
-// 回归测试：侧边栏删除功能（会话 / 上传 PDF / 收藏论文）。
+// 回归测试：侧边栏删除功能（会话 / 上传 PDF）。
 // 需要服务器使用独立临时数据库运行；脚本自行种入数据并在结束时清理。
 //
 // 用法（服务器需以临时库启动）：
@@ -44,27 +44,6 @@ async function seedData(page) {
     convs.push(resp.id);
   }
   results.conversations = convs;
-  await page.evaluate(() =>
-    fetch("/api/papers/import", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        papers: [
-          {
-            title: "E2E 收藏论文",
-            source: "arxiv",
-            external_id: "e2e-col-1",
-            authors: [],
-            abstract: "",
-            year: 2026,
-            citation_count: 0,
-            url: "https://arxiv.org/abs/9999.00001",
-            pdf_url: "",
-          },
-        ],
-      }),
-    }),
-  );
   return results;
 }
 
@@ -83,7 +62,6 @@ function cleanupDb(seededConvIds) {
     db.prepare("DELETE FROM conversations WHERE id = ?").run(id);
     db.prepare("DELETE FROM messages WHERE conversation_id = ?").run(id);
   }
-  db.prepare("DELETE FROM papers WHERE external_id = ?").run("e2e-col-1");
   db.prepare("DELETE FROM uploaded_pdfs WHERE filename = ?").run("e2e-seed.pdf");
   db.close();
 }
@@ -93,13 +71,9 @@ async function sidebarState(page) {
     const rows = Array.from(document.querySelectorAll(".sidebar-row"));
     const convRows = rows.filter((r) => r.querySelector('a[href*="conv="]'));
     const uploadRows = rows.filter((r) => r.querySelector(".sidebar-pdf-open"));
-    const colRows = Array.from(
-      document.querySelectorAll(".sidebar-collection"),
-    ).filter((r) => r.querySelector(".sidebar-pdf") !== null);
     return {
       conversations: convRows.length,
       uploaded: uploadRows.length,
-      collection: colRows.length,
     };
   });
 }
@@ -161,36 +135,26 @@ async function run() {
       return rows.length === 0;
     });
 
-    await clickDelete(page, ".sidebar-collection .sidebar-del");
-    await waitFor(page, () => {
-      return (
-        document.querySelectorAll(".sidebar-collection .sidebar-pdf").length === 0
-      );
-    });
-
     const after = await sidebarState(page);
     const apiState = await page.evaluate(async () => {
       const convs = await fetch("/api/conversations").then((r) => r.json());
       const papers = await fetch("/api/papers").then((r) => r.json());
-      const collection = await fetch("/api/papers/collection").then((r) => r.json());
       return {
         conversations: convs.length,
         papers: papers.length,
-        collection: collection.length,
       };
     });
 
     const failures = [];
-    if (before.conversations !== 2 || before.uploaded !== 1 || before.collection !== 1) {
+    if (before.conversations !== 2 || before.uploaded !== 1) {
       failures.push("初始侧边栏状态异常: " + JSON.stringify(before));
     }
-    if (after.conversations !== 1 || after.uploaded !== 0 || after.collection !== 0) {
+    if (after.conversations !== 1 || after.uploaded !== 0) {
       failures.push("删除后侧边栏状态异常: " + JSON.stringify(after));
     }
     if (
       apiState.conversations !== 1 ||
-      apiState.papers !== 0 ||
-      apiState.collection !== 0
+      apiState.papers !== 0
     ) {
       failures.push("API 数据未同步删除: " + JSON.stringify(apiState));
     }
@@ -201,7 +165,7 @@ async function run() {
       process.exitCode = 1;
     } else {
       console.log(
-        "SIDEBAR DELETE OK: conversations 2→1, uploaded 1→0, collection 1→0",
+        "SIDEBAR DELETE OK: conversations 2→1, uploaded 1→0",
       );
     }
   } finally {
