@@ -7,7 +7,7 @@ from pathlib import Path
 import fitz
 import pytest
 
-from app.services.pdf_service import PDFService, _normalize_text
+from app.services.pdf_service import PDFService, _normalize_text, fit_font_size
 
 
 def _make_pdf(path: Path, lines: list[str]) -> None:
@@ -126,3 +126,96 @@ def test_extract_keeps_figure_and_table_text(tmp_path):
     raw = service.extract(str(pdf_path))
     assert "Axis label inside figure" in raw.text
     assert "Cell A" in raw.text
+
+
+def _make_layout_pdf(path: Path) -> None:
+    """构造单栏 + 双栏段落布局的 PDF（textbox 自动换行成多行）。"""
+    doc = fitz.open()
+    page = doc.new_page(width=612, height=792)
+    page.insert_textbox(
+        fitz.Rect(72, 60, 500, 160),
+        "Low-Rank Adaptation (LoRA) reduces trainable parameters by injecting "
+        "low-rank matrices into weights, making fine-tuning efficient.",
+        fontsize=11,
+    )
+    page.insert_textbox(
+        fitz.Rect(72, 180, 500, 220),
+        "This second paragraph is short.",
+        fontsize=11,
+    )
+    page.insert_textbox(
+        fitz.Rect(72, 300, 280, 420),
+        "Left column first paragraph with enough words to wrap naturally.",
+        fontsize=11,
+    )
+    page.insert_textbox(
+        fitz.Rect(320, 300, 540, 420),
+        "Right column first paragraph placed beside the left one.",
+        fontsize=11,
+    )
+    doc.save(str(path))
+    doc.close()
+
+
+def test_extract_layout_returns_page_and_bboxes(tmp_path):
+    pdf_path = tmp_path / "layout.pdf"
+    _make_layout_pdf(pdf_path)
+    service = PDFService()
+    layouts = service.extract_layout(str(pdf_path))
+    assert len(layouts) == 1
+    layout = layouts[0]
+    assert layout.page == 1
+    assert layout.width == 612
+    assert layout.height == 792
+    assert len(layout.paragraphs) == 4
+    for paragraph in layout.paragraphs:
+        x0, y0, x1, y1 = paragraph.bbox
+        assert x0 < x1 and y0 < y1
+        assert x1 <= layout.width and y1 <= layout.height
+        assert paragraph.font_size > 0
+        assert paragraph.text.strip()
+
+
+def test_extract_layout_merges_textbox_lines_into_paragraph(tmp_path):
+    pdf_path = tmp_path / "merged.pdf"
+    _make_layout_pdf(pdf_path)
+    service = PDFService()
+    layouts = service.extract_layout(str(pdf_path))
+    first = layouts[0].paragraphs[0]
+    assert "Low-Rank Adaptation (LoRA) reduces" in first.text
+    assert "making fine-tuning efficient" in first.text
+
+
+def test_extract_layout_two_columns_reading_order(tmp_path):
+    pdf_path = tmp_path / "columns.pdf"
+    _make_layout_pdf(pdf_path)
+    service = PDFService()
+    paragraphs = service.extract_layout(str(pdf_path))[0].paragraphs
+    texts = [p.text for p in paragraphs]
+    left_index = next(i for i, t in enumerate(texts) if "Left column" in t)
+    right_index = next(i for i, t in enumerate(texts) if "Right column" in t)
+    assert left_index < right_index
+    assert paragraphs[left_index].bbox[0] < paragraphs[right_index].bbox[0]
+
+
+def test_extract_layout_skips_figure_and_table_text(tmp_path):
+    pdf_path = tmp_path / "figtable_layout.pdf"
+    _make_figure_table_pdf(pdf_path)
+    service = PDFService()
+    layouts = service.extract_layout(str(pdf_path))
+    texts = [p.text for p in layouts[0].paragraphs]
+    assert any("Body paragraph" in text for text in texts)
+    assert any("Figure 1" in text for text in texts)
+    assert not any("Axis label" in text for text in texts)
+    assert not any("Cell" in text for text in texts)
+
+
+def test_fit_font_size_shrinks_long_translation_only():
+    long_text = (
+        "低秩适配（LoRA）通过将低秩矩阵注入大模型的权重来减少可训练参数的"
+        "数量，使微调更高效且节省内存，同时保持模型性能。"
+    )
+    fitted = fit_font_size(long_text, 11, 428)
+    assert fitted < 11
+    assert fitted >= 11 * 0.45
+    assert fit_font_size("短文。", 11, 428) == 11

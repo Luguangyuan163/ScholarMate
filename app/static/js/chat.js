@@ -25,6 +25,12 @@ window.chatApp = function () {
       previewFullscreen: false,
       busy: false,
       source: null,
+      layoutMode: false,
+      rightMode: "translation",
+      hover: null,
+      layoutPages: [],
+      pageScales: {},
+      scaleTick: 0,
     },
 
     async init() {
@@ -48,6 +54,9 @@ window.chatApp = function () {
       }
       window.addEventListener("sm:open-translation", (event) => {
         this.openTranslation(event.detail.pdfId, event.detail.filename);
+      });
+      window.addEventListener("resize", () => {
+        if (this.view === "translate") this.updateLayoutScales();
       });
     },
 
@@ -313,6 +322,12 @@ window.chatApp = function () {
       this.translation.previewOpen = false;
       this.translation.previewZoom = 1;
       this.translation.previewFullscreen = false;
+      this.translation.layoutMode = false;
+      this.translation.rightMode = "translation";
+      this.translation.hover = null;
+      this.translation.layoutPages = [];
+      this.translation.pageScales = {};
+      this.translation.scaleTick = 0;
       const meta = this.translation.papers.find(
         (p) => String(p.id) === String(pdfId),
       );
@@ -339,6 +354,12 @@ window.chatApp = function () {
       this.translation.previewOpen = false;
       this.translation.previewZoom = 1;
       this.translation.previewFullscreen = false;
+      this.translation.layoutMode = false;
+      this.translation.rightMode = "translation";
+      this.translation.hover = null;
+      this.translation.layoutPages = [];
+      this.translation.pageScales = {};
+      this.translation.scaleTick = 0;
       this.view = "chat";
     },
 
@@ -404,9 +425,25 @@ window.chatApp = function () {
       const data = await resp.json();
       this.translation.segments = data.segments.map((seg, index) => ({
         index: index,
+        page: seg.page != null ? seg.page : null,
+        page_width: seg.page_width || 0,
+        page_height: seg.page_height || 0,
+        bbox: seg.bbox || null,
+        font_size: seg.font_size || 0,
+        bold: Boolean(seg.bold),
         source: seg.source,
         translation: seg.translation,
+        showSrc: false,
       }));
+      const hasLayout = this.translation.segments.some(
+        (seg) => seg.page != null && Array.isArray(seg.bbox),
+      );
+      this.translation.layoutMode = hasLayout;
+      if (hasLayout) {
+        this.translation.pageCount = Math.max(
+          ...this.translation.segments.map((seg) => seg.page || 0),
+        );
+      }
       this.translation.pdfName = data.filename;
       if (!this.translation.pdfId) {
         this.translation.pdfId = record.pdf_id;
@@ -418,6 +455,123 @@ window.chatApp = function () {
       }
       this.translation.status =
         "已加载保存的翻译版本（" + (data.created_at || "").slice(0, 16) + "）";
+      this.$nextTick(() => this.updateLayoutScales());
+    },
+
+    setViewMode(mode) {
+      this.translation.layoutMode = mode === "layout" && this.layoutCapable();
+      if (this.translation.layoutMode && !this.translation.previewOpen) {
+        this.translation.previewOpen = true;
+      }
+      this.$nextTick(() => this.updateLayoutScales());
+    },
+
+    toggleRightMode() {
+      this.translation.rightMode =
+        this.translation.rightMode === "translation" ? "contrast" : "translation";
+    },
+
+    layoutCapable() {
+      return this.translation.segments.some(
+        (seg) => seg.page != null && Array.isArray(seg.bbox),
+      );
+    },
+
+    layoutPageList() {
+      const pages = new Set();
+      for (const seg of this.translation.segments) {
+        if (seg.page != null) pages.add(seg.page);
+      }
+      return Array.from(pages).sort((a, b) => a - b);
+    },
+
+    layoutPageSegs(page) {
+      return this.translation.segments.filter((seg) => seg.page === page);
+    },
+
+    layoutPageWidth(page) {
+      const seg = this.layoutPageSegs(page)[0];
+      if (seg && seg.page_width) return seg.page_width;
+      const meta = (this.translation.layoutPages || []).find((p) => p.page === page);
+      return meta ? meta.width : 0;
+    },
+
+    layoutPageHeight(page) {
+      const seg = this.layoutPageSegs(page)[0];
+      if (seg && seg.page_height) return seg.page_height;
+      const meta = (this.translation.layoutPages || []).find((p) => p.page === page);
+      return meta ? meta.height : 0;
+    },
+
+    layoutPageStyle(page) {
+      const seg = this.layoutPageSegs(page)[0];
+      const width = seg ? seg.page_width : 0;
+      const height = seg ? seg.page_height : 0;
+      const style = { width: this.translation.previewZoom * 100 + "%" };
+      if (width && height) style.aspectRatio = width + " / " + height;
+      return style;
+    },
+
+    layoutParaStyle(seg) {
+      if (!seg.bbox || !seg.page_width || !seg.page_height) return {};
+      const scale = this.translation.pageScales[seg.page] || 0;
+      const style = {
+        left: (seg.bbox[0] / seg.page_width) * 100 + "%",
+        top: (seg.bbox[1] / seg.page_height) * 100 + "%",
+        width: ((seg.bbox[2] - seg.bbox[0]) / seg.page_width) * 100 + "%",
+        fontWeight: seg.bold ? 700 : 400,
+      };
+      if (scale > 0 && seg.font_size) {
+        style.fontSize = Math.max(5, seg.font_size * scale) + "px";
+      }
+      return style;
+    },
+
+    updateLayoutScales() {
+      if (this.view !== "translate") return;
+      const pageEls = document.querySelectorAll(".layout-page");
+      if (!pageEls.length) return;
+      const scales = {};
+      pageEls.forEach((el) => {
+        const page = Number(el.dataset.page);
+        const pageWidth = Number(el.dataset.pageWidth);
+        if (!page || !pageWidth) return;
+        const width = el.getBoundingClientRect().width;
+        if (width > 0) scales[page] = width / pageWidth;
+      });
+      this.translation.pageScales = scales;
+      this.translation.scaleTick += 1;
+    },
+
+    hoverPara(seg) {
+      this.translation.hover = seg
+        ? { page: seg.page, index: seg.index }
+        : null;
+    },
+
+    isHovered(seg) {
+      const hover = this.translation.hover;
+      return !!(hover && hover.page === seg.page && hover.index === seg.index);
+    },
+
+    focusPara(seg, event) {
+      this.hoverPara(seg);
+      const key = seg.page + "-" + seg.index;
+      const fromRight =
+        event &&
+        event.currentTarget &&
+        event.currentTarget.classList.contains("layout-para");
+      const selector = fromRight
+        ? '.layout-zone[data-para="' + key + '"]'
+        : '.layout-para[data-para="' + key + '"]';
+      this.$nextTick(() => {
+        const el = document.querySelector(selector);
+        if (el) el.scrollIntoView({ block: "center", behavior: "smooth" });
+      });
+    },
+
+    toggleParaSource(seg) {
+      seg.showSrc = !seg.showSrc;
     },
 
     async togglePreview() {
@@ -458,6 +612,7 @@ window.chatApp = function () {
     setPreviewZoom(zoom) {
       const next = Math.min(3, Math.max(0.5, zoom));
       this.translation.previewZoom = Number(next.toFixed(2));
+      this.$nextTick(() => this.updateLayoutScales());
     },
 
     togglePreviewFullscreen() {
@@ -585,10 +740,15 @@ window.chatApp = function () {
       if (!this.translation.pdfId || this.translation.busy) return;
       this.translation.busy = true;
       this.translation.segments = [];
+      this.translation.layoutMode = false;
+      this.translation.hover = null;
+      this.translation.layoutPages = [];
+      this.translation.pageScales = {};
       this.translation.status = "准备翻译…";
       const params = new URLSearchParams({
         target_lang: "zh",
         max_paragraphs: String(this.translation.maxParagraphs || 0),
+        mode: "layout",
       });
       this.closeTranslationSource();
       const source = new EventSource(
@@ -635,7 +795,11 @@ window.chatApp = function () {
       } catch {
         return;
       }
-      if (type === "progress") {
+      if (type === "layout") {
+        this.translation.layoutPages = payload.pages || [];
+        this.translation.status =
+          "已解析 " + (payload.pages || []).length + " 页版面，开始翻译…";
+      } else if (type === "progress") {
         this.translation.status =
           "翻译进度 " + payload.done + "/" + payload.total;
       } else if (type === "status") {
@@ -643,15 +807,32 @@ window.chatApp = function () {
       } else if (type === "segment") {
         this.translation.segments.push({
           index: payload.index,
+          page: payload.page != null ? payload.page : null,
+          page_width: payload.page_width || 0,
+          page_height: payload.page_height || 0,
+          bbox: payload.bbox || null,
+          font_size: payload.font_size || 0,
+          bold: Boolean(payload.bold),
           source: payload.source,
           translation: payload.translation,
+          showSrc: false,
         });
         this.translation.segments.sort((a, b) => a.index - b.index);
+        if (payload.page != null && Array.isArray(payload.bbox)) {
+          this.translation.layoutMode = true;
+          if (!this.translation.previewOpen) this.translation.previewOpen = true;
+          this.translation.pageCount = Math.max(
+            this.translation.pageCount || 0,
+            payload.page,
+          );
+          this.$nextTick(() => this.updateLayoutScales());
+        }
         this.translation.status =
           "翻译进度 " + (payload.index + 1) + "/" + payload.total;
       } else if (type === "done") {
         this.translation.status = "翻译完成，共 " + payload.total + " 段";
         this.translation.busy = false;
+        this.$nextTick(() => this.updateLayoutScales());
       } else if (type === "error") {
         this.translation.status = "错误: " + payload.content;
         this.translation.busy = false;

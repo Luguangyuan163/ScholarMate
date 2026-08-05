@@ -50,6 +50,16 @@
     <header class="translate-head">
       <button class="btn btn-sm btn-outline" type="button" @click="closeTranslation()">← 返回对话</button>
       <h2 x-text="translation.pdfName ? '对照翻译：' + translation.pdfName : 'PDF 对照翻译'"></h2>
+      <div class="view-mode-toggle">
+        <button class="btn btn-sm btn-outline" type="button"
+                :class="{ active: !translation.layoutMode }" @click="setViewMode('list')">列表对照</button>
+        <button class="btn btn-sm btn-outline" type="button"
+                :class="{ active: translation.layoutMode }" @click="setViewMode('layout')"
+                :disabled="!layoutCapable()">版面对照</button>
+      </div>
+      <button class="btn btn-sm btn-outline" type="button" x-show="translation.layoutMode"
+              @click="toggleRightMode()"
+              x-text="translation.rightMode === 'translation' ? '叠加原文' : '隐藏原文'">隐藏原文</button>
       <button class="btn btn-sm btn-outline preview-toggle" type="button"
               @click="togglePreview()" :disabled="!translation.pdfId"
               x-text="translation.previewOpen ? '收起原文' : '原文 PDF'">原文 PDF</button>
@@ -84,7 +94,7 @@
     <div class="translate-status" x-show="translation.status" x-text="translation.status"></div>
     <div class="translate-status upload" x-show="translation.uploadStatus" x-text="translation.uploadStatus"></div>
 
-    <div class="segments">
+    <div class="segments" x-show="!translation.layoutMode">
       <template x-for="(seg, i) in translation.segments" :key="i">
         <div class="segment">
           <div class="segment-head">
@@ -97,6 +107,35 @@
       <div class="placeholder"
            x-show="!translation.segments.length && !translation.busy && !translation.status">
         上传 PDF 或从论文库选择后，双语对照将显示在这里。
+      </div>
+    </div>
+
+    <div class="layout-pages" :class="'mode-' + translation.rightMode" x-show="translation.layoutMode">
+      <div class="layout-tools">
+        <span class="hint">版面对照：左侧原文，右侧按原 PDF 坐标排版的译文；点击任一段落可双向定位，点击译文可显示对应原文。</span>
+      </div>
+      <template x-for="page in layoutPageList()" :key="page">
+        <div class="layout-page" :data-page="page"
+             :data-page-width="layoutPageWidth(page)"
+             :data-page-height="layoutPageHeight(page)"
+             :style="layoutPageStyle(page)">
+          <img class="layout-bg"
+               :src="'/api/pdf/' + translation.pdfId + '/pages/' + page + '/image?scale=3'"
+               loading="lazy" alt="" @load="updateLayoutScales()">
+          <template x-for="seg in layoutPageSegs(page)" :key="seg.index">
+            <div class="layout-para" :class="{ hovered: isHovered(seg) }"
+                 :data-para="seg.page + '-' + seg.index" :style="layoutParaStyle(seg)"
+                 @mouseenter="hoverPara(seg)" @mouseleave="hoverPara(null)"
+                 @click="focusPara(seg, $event)">
+              <div class="layout-para-src" x-show="seg.showSrc" x-text="seg.source"></div>
+              <div class="layout-para-trans" x-text="seg.translation"></div>
+            </div>
+          </template>
+        </div>
+      </template>
+      <div class="placeholder"
+           x-show="!translation.segments.length && !translation.busy && !translation.status">
+        版面对照译文将按原 PDF 坐标显示在这里。
       </div>
     </div>
 
@@ -143,11 +182,20 @@
       <div class="preview-pages">
         <template x-for="n in previewPageList()" :key="n">
           <figure class="preview-page">
-            <img :src="'/api/pdf/' + translation.pdfId + '/pages/' + n + '/image?scale=3'"
-                 :style="'width:' + (translation.previewZoom * 100) + '%'"
-                 loading="lazy" :alt="'原文第 ' + n + ' 页'"
-                 title="点击在新窗口查看原图"
-                 @click="window.open($event.currentTarget.src, '_blank')">
+            <div class="preview-page-inner"
+                 :style="'width:' + (translation.previewZoom * 100) + '%'">
+              <img :src="'/api/pdf/' + translation.pdfId + '/pages/' + n + '/image?scale=3'"
+                   style="width:100%"
+                   loading="lazy" :alt="'原文第 ' + n + ' 页'"
+                   title="点击在新窗口查看原图"
+                   @click="window.open($event.currentTarget.src, '_blank')">
+              <template x-for="seg in layoutPageSegs(n)" :key="'z' + seg.index">
+                <div class="layout-zone" :class="{ hovered: isHovered(seg) }"
+                     :data-para="seg.page + '-' + seg.index" :style="layoutParaStyle(seg)"
+                     @mouseenter="hoverPara(seg)" @mouseleave="hoverPara(null)"
+                     @click="focusPara(seg, $event)" :title="seg.source"></div>
+              </template>
+            </div>
             <figcaption x-text="'第 ' + n + ' 页'"></figcaption>
           </figure>
         </template>

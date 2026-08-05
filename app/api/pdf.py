@@ -23,6 +23,7 @@ from app.core.database import get_db
 from app.models.translation_record import TranslationRecord
 from app.models.uploaded_pdf import UploadedPDF
 from app.schemas.pdf import PDFImportRequest, PDFUploadResponse, TranslateRequest
+from app.services.pdf_service import fit_font_size
 
 router = APIRouter(prefix="/api/pdf", tags=["pdf"])
 logger = logging.getLogger(__name__)
@@ -271,8 +272,13 @@ async def translate_pdf_stream(
     session: Annotated[AsyncSession, Depends(get_db)],
     target_lang: str = Query(default="zh", max_length=16),
     max_paragraphs: int = Query(default=0, ge=0, le=500),
+    mode: str = Query(default="list", pattern="^(list|layout)$"),
 ):
-    """EventSource 使用的 GET 翻译流式端点。"""
+    """EventSource 使用的 GET 翻译流式端点。
+
+    mode=list：按 2000 字符分块的流水对照；mode=layout：按原 PDF 坐标逐段翻译，
+    每个 segment 携带 page/bbox/字号，供前端按原版面渲染译文。
+    """
     row = await session.get(UploadedPDF, pdf_id)
     if row is None:
         raise HTTPException(status_code=404, detail="论文不存在")
@@ -282,14 +288,16 @@ async def translate_pdf_stream(
         target_lang=target_lang,
         max_paragraphs=max_paragraphs,
     )
-    return sse_response(_pdf_translate_events(request, row, payload))
+    return sse_response(_pdf_translate_events(request, row, payload, mode))
 
 
-async def _pdf_translate_events(request: Request, row, payload: TranslateRequest):
+async def _pdf_translate_events(
+    request: Request, row, payload: TranslateRequest, mode: str = "list"
+):
     pdf_service = request.app.state.pdf_service
     translation = request.app.state.translation_service
     async for event in _translate_events(
-        request, pdf_service, translation, row, payload
+        request, pdf_service, translation, row, payload, mode
     ):
         yield event
 
@@ -300,8 +308,15 @@ async def _translate_events(
     translation,
     row,
     payload: TranslateRequest,
+    mode: str = "list",
 ):
     """提取正文（剔除图表文字）→ 分块 → 复用缓存 + 并发逐段翻译，产出 SSE 事件。"""
+    if mode == "layout":
+        async for event in _layout_translate_events(
+            request, pdf_service, translation, row, payload
+        ):
+            yield event
+        return
     result = await run_in_threadpool(pdf_service.extract_clean, row.file_path)
     chunks = pdf_service.chunk_paragraphs(result.text, max_chars=TRANSLATE_CHUNK_CHARS)
     if payload.max_paragraphs > 0:
@@ -352,6 +367,95 @@ async def _translate_events(
     segments = [segments_by_index[index] for index in sorted(segments_by_index)]
     await _save_translation(request, row, payload.target_lang, segments)
     yield {"type": "done", "total": total}
+
+
+async def _layout_translate_events(
+    request: Request,
+    pdf_service,
+    translation,
+    row,
+    payload: TranslateRequest,
+):
+    """按原 PDF 坐标逐段翻译：先发 layout 事件（页尺寸），再逐段输出带 bbox 的译文。"""
+    layouts = await run_in_threadpool(pdf_service.extract_layout, row.file_path)
+    paragraphs = [
+        paragraph for layout in layouts for paragraph in layout.paragraphs
+    ]
+    if payload.max_paragraphs > 0:
+        paragraphs = paragraphs[: payload.max_paragraphs]
+    total = len(paragraphs)
+    pages = [
+        {"page": layout.page, "width": layout.width, "height": layout.height}
+        for layout in layouts
+    ]
+    yield {"type": "layout", "pages": pages, "total": total}
+
+    cache = await _load_translation_cache(request, row, payload.target_lang)
+    segments_by_index: dict[int, dict] = {}
+    pending_indexes: list[int] = []
+    pending_texts: list[str] = []
+
+    for index, paragraph in enumerate(paragraphs):
+        cached = cache.get(paragraph.text)
+        if cached is not None:
+            segments_by_index[index] = _layout_segment(paragraph, cached)
+            yield {
+                "type": "segment",
+                "index": index,
+                **_layout_segment(paragraph, cached),
+                "total": total,
+            }
+        else:
+            pending_indexes.append(index)
+            pending_texts.append(paragraph.text)
+
+    if pending_texts:
+        try:
+            async for event in _translate_pending_with_heartbeat(
+                translation,
+                pending_texts,
+                pending_indexes,
+                [p.text for p in paragraphs],
+                total,
+                payload.target_lang,
+            ):
+                if event["type"] == "segment":
+                    index = event["index"]
+                    segments_by_index[index] = _layout_segment(
+                        paragraphs[index], event["translation"]
+                    )
+                    yield {
+                        "type": "segment",
+                        "index": index,
+                        **_layout_segment(paragraphs[index], event["translation"]),
+                        "total": total,
+                    }
+                else:
+                    yield event
+        except Exception as exc:
+            yield {"type": "error", "content": f"翻译失败: {exc}"}
+            return
+
+    segments = [segments_by_index[index] for index in sorted(segments_by_index)]
+    await _save_translation(request, row, payload.target_lang, segments)
+    yield {"type": "done", "total": total}
+
+
+def _layout_segment(paragraph, translation: str) -> dict:
+    """把排版段落转为带坐标的 segment，并按译文长度自动估算合适字号。"""
+    bbox = paragraph.bbox
+    return {
+        "page": paragraph.page,
+        "page_width": paragraph.page_width,
+        "page_height": paragraph.page_height,
+        "bbox": [round(value, 2) for value in bbox],
+        "source": paragraph.text,
+        "translation": translation,
+        "font_size": round(
+            fit_font_size(translation, paragraph.font_size, bbox[2] - bbox[0]), 1
+        ),
+        "bold": paragraph.bold,
+    }
 
 
 async def _translate_pending_with_heartbeat(

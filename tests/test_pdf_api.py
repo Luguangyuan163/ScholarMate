@@ -409,6 +409,105 @@ def test_translate_pdf_get_stream_endpoint(app_settings, tmp_path):
     assert "event: done" in resp.text
 
 
+def _make_layout_pdf(path: Path) -> None:
+    doc = fitz.open()
+    page = doc.new_page(width=612, height=792)
+    page.insert_textbox(
+        fitz.Rect(72, 60, 500, 160),
+        "Low-Rank Adaptation (LoRA) reduces trainable parameters.",
+        fontsize=11,
+    )
+    page.insert_textbox(
+        fitz.Rect(72, 180, 500, 220),
+        "This second paragraph is short.",
+        fontsize=11,
+    )
+    doc.save(str(path))
+    doc.close()
+
+
+def test_translate_pdf_layout_stream_emits_bbox_segments(app_settings, tmp_path):
+    """mode=layout：segment 携带页号、bbox、页面尺寸与自适应字号。"""
+    pdf_path = tmp_path / "layout_stream.pdf"
+    _make_layout_pdf(pdf_path)
+    app = create_app(app_settings)
+    app.state.embedding_service = FakeEmbeddingService()
+    app.state.translation_service = FakeTranslation()
+    with TestClient(app) as client:
+        with open(pdf_path, "rb") as handle:
+            uploaded = client.post(
+                "/api/pdf/upload",
+                files={"file": ("layout_stream.pdf", handle, "application/pdf")},
+            )
+        pdf_id = uploaded.json()["pdf_id"]
+        resp = client.get(
+            f"/api/pdf/{pdf_id}/translate-stream",
+            params={"target_lang": "zh", "mode": "layout"},
+        )
+    assert resp.status_code == 200
+    assert "event: layout" in resp.text
+    assert '"pages"' in resp.text
+    assert '"bbox"' in resp.text
+    assert '"page_width"' in resp.text
+    assert '"page_height"' in resp.text
+    assert '"font_size"' in resp.text
+    assert resp.text.count("event: segment") == 2
+    assert "event: done" in resp.text
+
+
+def test_translate_pdf_layout_reuses_cache_on_rerun(app_settings, tmp_path):
+    """版面对照翻译再次执行时复用已保存段落缓存，不再调用 LLM。"""
+    pdf_path = tmp_path / "layout_cache.pdf"
+    _make_layout_pdf(pdf_path)
+    app = create_app(app_settings)
+    app.state.embedding_service = FakeEmbeddingService()
+    translation = FakeTranslation()
+    app.state.translation_service = translation
+    with TestClient(app) as client:
+        with open(pdf_path, "rb") as handle:
+            uploaded = client.post(
+                "/api/pdf/upload",
+                files={"file": ("layout_cache.pdf", handle, "application/pdf")},
+            )
+        pdf_id = uploaded.json()["pdf_id"]
+        first = client.get(
+            f"/api/pdf/{pdf_id}/translate-stream",
+            params={"target_lang": "zh", "mode": "layout"},
+        )
+        assert first.status_code == 200
+        calls_after_first = len(translation.calls)
+        assert calls_after_first == 2
+
+        second = client.get(
+            f"/api/pdf/{pdf_id}/translate-stream",
+            params={"target_lang": "zh", "mode": "layout"},
+        )
+    assert second.status_code == 200
+    assert second.text.count("event: segment") == 2
+    assert len(translation.calls) == calls_after_first
+
+
+def test_translate_pdf_layout_respects_max_paragraphs(app_settings, tmp_path):
+    pdf_path = tmp_path / "layout_limit.pdf"
+    _make_layout_pdf(pdf_path)
+    app = create_app(app_settings)
+    app.state.embedding_service = FakeEmbeddingService()
+    app.state.translation_service = FakeTranslation()
+    with TestClient(app) as client:
+        with open(pdf_path, "rb") as handle:
+            uploaded = client.post(
+                "/api/pdf/upload",
+                files={"file": ("layout_limit.pdf", handle, "application/pdf")},
+            )
+        pdf_id = uploaded.json()["pdf_id"]
+        resp = client.get(
+            f"/api/pdf/{pdf_id}/translate-stream",
+            params={"target_lang": "zh", "mode": "layout", "max_paragraphs": 1},
+        )
+    assert resp.status_code == 200
+    assert resp.text.count("event: segment") == 1
+
+
 def test_translate_pdf_reports_llm_error(app_settings, tmp_path):
     class FailingTranslation:
         async def translate_paragraph(self, text, target_lang="zh"):
