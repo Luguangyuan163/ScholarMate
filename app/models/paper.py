@@ -23,4 +23,5 @@ class Paper(Base):
     year: Mapped[int | None] = mapped_column(Integer, nullable=True)
     citation_count: Mapped[int] = mapped_column(Integer, default=0)
     url: Mapped[str] = mapped_column(String(500), default="")
+    pdf_url: Mapped[str] = mapped_column(String(500), default="")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)

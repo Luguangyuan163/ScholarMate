@@ -94,6 +94,7 @@ def _parse_entry(entry: ET.Element) -> PaperItem:
         year=int(published[:4]) if len(published) >= 4 else None,
         citation_count=0,
         url=entry_id,
+        pdf_url=f"https://arxiv.org/pdf/{entry_id.rsplit('/abs/', 1)[-1]}",
     )
 
 

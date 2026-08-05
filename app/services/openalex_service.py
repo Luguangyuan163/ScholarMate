@@ -95,6 +95,8 @@ def _parse_openalex_response(data: dict) -> list[PaperItem]:
             for author in work.get("authorships", [])
             if author.get("author", {}).get("display_name")
         ]
+        best_oa = work.get("best_oa_location") or {}
+        oa_url = (work.get("open_access") or {}).get("oa_url", "") or ""
         items.append(
             PaperItem(
                 title=work.get("title", ""),
@@ -105,6 +107,8 @@ def _parse_openalex_response(data: dict) -> list[PaperItem]:
                 year=work.get("publication_year"),
                 citation_count=work.get("cited_by_count", 0),
                 url=work.get("doi") or work.get("id", ""),
+                pdf_url=best_oa.get("pdf_url", "")
+                or (oa_url if oa_url.lower().endswith(".pdf") else ""),
             )
         )
     return items

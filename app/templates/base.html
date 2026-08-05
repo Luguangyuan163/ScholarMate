@@ -39,10 +39,13 @@
             </a>
           </template>
           <template x-for="p in collection" :key="'col-' + p.id">
-            <a class="sidebar-item" :href="p.url || '#'" :target="p.url ? '_blank' : null">
-              <span class="item-title" x-text="p.title"></span>
-              <span class="sidebar-meta" x-text="'被引 ' + p.citation_count"></span>
-            </a>
+            <div class="sidebar-collection">
+              <a class="sidebar-item" :href="p.url || '#'" :target="p.url ? '_blank' : null">
+                <span class="item-title" x-text="p.title"></span>
+                <span class="sidebar-meta" x-text="'被引 ' + p.citation_count"></span>
+              </a>
+              <a class="sidebar-pdf" :href="p.pdf_url" target="_blank" x-show="p.pdf_url" title="打开 PDF">PDF</a>
+            </div>
           </template>
         </div>
         <p class="sidebar-empty" x-show="!uploaded.length && !collection.length && !loading">暂无论文。</p>
@@ -58,6 +61,7 @@
 
       <nav class="sidebar-footer">
         <a href="/" :class="{ active: isPage('/') }">工作台</a>
+        <a href="/search" :class="{ active: isPage('/search') }">论文检索</a>
         <a href="/translate" :class="{ active: isPage('/translate') }">翻译</a>
         <a href="/papers" :class="{ active: isPage('/papers') }">论文库</a>
       </nav>

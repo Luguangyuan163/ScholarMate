@@ -35,15 +35,18 @@ def build_tools(arxiv, s2, openalex, embedding, vector_store, translation) -> li
     return [
         Tool(
             name="search_arxiv",
-            description="在 arXiv 检索论文，返回标题/作者/年份/链接（不含引用量）",
+            description=(
+                "在 arXiv 检索论文，返回标题/作者/年份/网页链接/PDF 直链"
+                "（不含引用量）"
+            ),
             parameters=_search_params(),
             func=_make_search_arxiv(arxiv),
         ),
         Tool(
             name="search_semantic_scholar",
             description=(
-                "在 Semantic Scholar 检索论文，返回引用量，可用于按引用量排序；"
-                "Semantic Scholar 不可用时自动回退 OpenAlex"
+                "在 Semantic Scholar 检索论文，返回引用量与 PDF 直链，"
+                "可用于按引用量排序；Semantic Scholar 不可用时自动回退 OpenAlex"
             ),
             parameters=_search_params(),
             func=_make_search_s2(s2, openalex),
@@ -116,6 +119,7 @@ def _make_search_arxiv(arxiv):
                 "year": item.year,
                 "external_id": item.external_id,
                 "url": item.url,
+                "pdf_url": item.pdf_url,
             }
             for item in items
         ]
@@ -142,6 +146,7 @@ def _make_search_s2(s2, openalex):
                 "citation_count": item.citation_count,
                 "external_id": item.external_id,
                 "url": item.url,
+                "pdf_url": item.pdf_url,
             }
             for item in items
         ]

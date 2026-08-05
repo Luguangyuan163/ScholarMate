@@ -14,6 +14,7 @@ class PaperImportItem(BaseModel):
     year: int | None = None
     citation_count: int = 0
     url: str = ""
+    pdf_url: str = ""
 
 
 class PaperImportRequest(BaseModel):

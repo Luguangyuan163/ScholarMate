@@ -28,6 +28,7 @@
           </p>
         </div>
         <div class="paper-card-actions">
+          <a class="btn btn-sm btn-outline" :href="'/api/pdf/' + p.id + '/file'" target="_blank">打开 PDF</a>
           <a class="btn btn-sm btn-outline" :href="'/translate?pdf=' + p.id">翻译</a>
           <button class="btn btn-sm btn-danger" @click="remove(p)" :disabled="busy">删除</button>
         </div>

@@ -13,6 +13,10 @@ OPENALEX_JSON = {
             "publication_year": 2021,
             "cited_by_count": 1200,
             "authorships": [{"author": {"display_name": "Edward J. Hu"}}],
+            "best_oa_location": {
+                "pdf_url": "https://export.arxiv.org/pdf/2106.09685",
+            },
+            "open_access": {"oa_url": "https://export.arxiv.org/pdf/2106.09685"},
             "abstract_inverted_index": {
                 "We": [0],
                 "propose": [1],
@@ -58,6 +62,7 @@ def test_parse_openalex_response():
     assert item.authors == ["Edward J. Hu"]
     assert item.year == 2021
     assert item.abstract == "We propose adaptation low-rank"
+    assert item.pdf_url == "https://export.arxiv.org/pdf/2106.09685"
 
 
 def test_parse_openalex_response_missing_fields():
@@ -67,6 +72,37 @@ def test_parse_openalex_response_missing_fields():
     assert items[0].citation_count == 0
     assert items[0].authors == []
     assert items[0].external_id == "W1"
+    assert items[0].pdf_url == ""
+
+
+def test_parse_openalex_response_oa_url_pdf_fallback():
+    payload = {
+        "results": [
+            {
+                "id": "https://openalex.org/W2",
+                "title": "OA only",
+                "best_oa_location": None,
+                "open_access": {"oa_url": "https://example.com/paper.pdf"},
+            }
+        ]
+    }
+    items = _parse_openalex_response(payload)
+    assert items[0].pdf_url == "https://example.com/paper.pdf"
+
+
+def test_parse_openalex_response_ignores_non_pdf_oa_url():
+    payload = {
+        "results": [
+            {
+                "id": "https://openalex.org/W3",
+                "title": "Landing page",
+                "best_oa_location": None,
+                "open_access": {"oa_url": "https://example.com/paper"},
+            }
+        ]
+    }
+    items = _parse_openalex_response(payload)
+    assert items[0].pdf_url == ""
 
 
 async def test_search_sends_query_per_page_and_mailto():

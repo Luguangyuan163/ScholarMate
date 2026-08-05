@@ -16,4 +16,36 @@
   </form>
 </section>
 <div id="results"></div>
+<script>
+  // 检索结果「导入并翻译」：下载 PDF 入库后跳转到翻译工作台
+  document.addEventListener("click", async (event) => {
+    const button = event.target.closest(".import-translate");
+    if (!button || button.disabled) return;
+    button.disabled = true;
+    const label = button.textContent;
+    button.textContent = "导入中…";
+    try {
+      const resp = await fetch("/api/pdf/import-url", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          url: button.dataset.url,
+          title: button.dataset.title || "",
+        }),
+      });
+      if (!resp.ok) {
+        const body = await resp.json().catch(() => ({}));
+        alert("导入失败: " + (body.detail || ("HTTP " + resp.status)));
+        return;
+      }
+      const data = await resp.json();
+      window.location.href = "/translate?pdf=" + data.pdf_id;
+    } catch (err) {
+      alert("导入失败: " + err.message);
+    } finally {
+      button.disabled = false;
+      button.textContent = label;
+    }
+  });
+</script>
 {% endblock %}

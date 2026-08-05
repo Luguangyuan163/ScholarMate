@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class PDFUploadResponse(BaseModel):
@@ -14,3 +14,8 @@ class PDFUploadResponse(BaseModel):
 class TranslateRequest(BaseModel):
     target_lang: str = "zh"
     max_paragraphs: int = 0  # 0 表示翻译全部段落
+
+
+class PDFImportRequest(BaseModel):
+    url: str = Field(min_length=8, max_length=1000)
+    title: str = Field(default="", max_length=200)

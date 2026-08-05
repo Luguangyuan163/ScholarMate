@@ -6,8 +6,10 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import fitz
+import httpx
 from fastapi.testclient import TestClient
 
+import app.api.pdf as pdf_api
 from app.main import create_app
 
 
@@ -294,3 +296,105 @@ def test_translate_pdf_reports_llm_error(app_settings, tmp_path):
     assert resp.status_code == 200
     assert "event: error" in resp.text
     assert "翻译失败" in resp.text
+
+
+def test_import_pdf_from_url_success(app_settings, tmp_path, monkeypatch):
+    pdf_path = tmp_path / "remote.pdf"
+    _make_pdf(pdf_path, ["Low-rank adaptation is efficient."])
+    pdf_bytes = pdf_path.read_bytes()
+
+    async def fake_download(url: str) -> bytes:
+        return pdf_bytes
+
+    monkeypatch.setattr(pdf_api, "_download_pdf", fake_download)
+    app = create_app(app_settings)
+    app.state.embedding_service = FakeEmbeddingService()
+
+    with TestClient(app) as client:
+        resp = client.post(
+            "/api/pdf/import-url",
+            json={"url": "https://arxiv.org/pdf/2106.09685", "title": "LoRA"},
+        )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["status"] == "ready"
+
+    candidates = list(app.state.settings.pdf_upload_dir.glob("*.pdf"))
+    assert len(candidates) == 1
+    assert candidates[0].read_bytes().startswith(b"%PDF")
+
+    with TestClient(app) as client:
+        papers = client.get("/api/papers")
+    assert papers.json()[0]["filename"] == "LoRA.pdf"
+
+
+def test_import_pdf_from_url_rejects_non_pdf(app_settings, monkeypatch):
+    async def fake_download(url: str) -> bytes:
+        return b"this is not a pdf"
+
+    monkeypatch.setattr(pdf_api, "_download_pdf", fake_download)
+    app = create_app(app_settings)
+    with TestClient(app) as client:
+        resp = client.post(
+            "/api/pdf/import-url",
+            json={"url": "https://example.com/not-a-pdf"},
+        )
+    assert resp.status_code == 400
+
+
+def test_import_pdf_from_url_download_failure(app_settings, monkeypatch):
+    async def fake_download(url: str) -> bytes:
+        raise httpx.HTTPStatusError(
+            "403",
+            request=httpx.Request("GET", url),
+            response=httpx.Response(403),
+        )
+
+    monkeypatch.setattr(pdf_api, "_download_pdf", fake_download)
+    app = create_app(app_settings)
+    with TestClient(app) as client:
+        resp = client.post(
+            "/api/pdf/import-url",
+            json={"url": "https://example.com/forbidden.pdf"},
+        )
+    assert resp.status_code == 502
+
+
+def test_import_pdf_from_url_rejects_bad_scheme(app_settings, monkeypatch):
+    async def fake_download(url: str) -> bytes:
+        raise httpx.UnsupportedProtocol("file://")
+
+    monkeypatch.setattr(pdf_api, "_download_pdf", fake_download)
+    app = create_app(app_settings)
+    with TestClient(app) as client:
+        resp = client.post(
+            "/api/pdf/import-url",
+            json={"url": "file:///C:/secret.pdf"},
+        )
+    assert resp.status_code == 400
+
+
+def test_get_pdf_file_serves_inline(app_settings, tmp_path):
+    pdf_path = tmp_path / "view.pdf"
+    _make_pdf(pdf_path, ["Viewable paper."])
+    app = create_app(app_settings)
+    app.state.embedding_service = FakeEmbeddingService()
+    with TestClient(app) as client:
+        with open(pdf_path, "rb") as handle:
+            uploaded = client.post(
+                "/api/pdf/upload",
+                files={"file": ("view.pdf", handle, "application/pdf")},
+            )
+        pdf_id = uploaded.json()["pdf_id"]
+        resp = client.get(f"/api/pdf/{pdf_id}/file")
+    assert resp.status_code == 200
+    assert resp.headers["content-type"] == "application/pdf"
+    assert "inline" in resp.headers["content-disposition"]
+    assert resp.content.startswith(b"%PDF")
+
+
+def test_get_pdf_file_missing_returns_404(app_settings):
+    app = create_app(app_settings)
+    with TestClient(app) as client:
+        resp = client.get("/api/pdf/999/file")
+    assert resp.status_code == 404

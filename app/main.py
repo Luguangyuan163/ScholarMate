@@ -88,6 +88,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     async def agent_page(request: Request) -> HTMLResponse:
         return templates.TemplateResponse(request, "chat.html", {"app_title": settings.app_title})
 
+    @app.get("/search", response_class=HTMLResponse)
+    async def search_page(request: Request) -> HTMLResponse:
+        return templates.TemplateResponse(request, "index.html", {"app_title": settings.app_title})
+
     @app.get("/translate", response_class=HTMLResponse)
     async def translate_page(request: Request) -> HTMLResponse:
         return templates.TemplateResponse(

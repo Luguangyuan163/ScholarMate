@@ -522,6 +522,18 @@ input[type="file"] { font: inherit; color: var(--ink-soft); }
 .sidebar-item .sidebar-meta { flex: none; font-size: 11px; color: var(--muted); }
 .sidebar-item.active .sidebar-meta { color: rgba(255, 255, 255, 0.75); }
 .sidebar-item .item-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sidebar-collection { display: flex; align-items: center; gap: 4px; }
+.sidebar-collection .sidebar-item { flex: 1; min-width: 0; }
+.sidebar-collection .sidebar-pdf {
+  flex: none;
+  font-family: var(--mono);
+  font-size: 10px;
+  padding: 1px 5px;
+  border: 1px solid var(--line-strong);
+  border-radius: 999px;
+  color: var(--amber);
+}
+.sidebar-collection .sidebar-pdf:hover { border-color: var(--amber); text-decoration: none; }
 .sidebar-empty { color: var(--muted); font-size: 13px; padding: 6px 10px; margin: 0; }
 .sidebar-upload {
   width: 100%;

@@ -112,6 +112,7 @@ window.chatApp = function () {
           year: p.year || null,
           citation_count: p.citation_count || 0,
           url: p.url || "",
+          pdf_url: p.pdf_url || "",
           authors: p.authors || [],
         });
       }

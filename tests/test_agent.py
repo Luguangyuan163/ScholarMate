@@ -90,6 +90,7 @@ async def test_search_arxiv_tool_returns_json():
                     source="arxiv",
                     external_id="2106.09685",
                     year=2021,
+                    pdf_url="https://arxiv.org/pdf/2106.09685v1",
                 )
             ]
 
@@ -105,6 +106,7 @@ async def test_search_arxiv_tool_returns_json():
     payload = json.loads(output)
     assert payload[0]["title"] == "LoRA Paper"
     assert payload[0]["external_id"] == "2106.09685"
+    assert payload[0]["pdf_url"] == "https://arxiv.org/pdf/2106.09685v1"
 
 
 async def test_search_s2_tool_falls_back_to_openalex():
@@ -125,6 +127,7 @@ async def test_search_s2_tool_falls_back_to_openalex():
                     external_id="W1",
                     year=2022,
                     citation_count=88,
+                    pdf_url="https://example.com/paper.pdf",
                 )
             ]
 
@@ -140,6 +143,7 @@ async def test_search_s2_tool_falls_back_to_openalex():
     payload = json.loads(output)
     assert payload[0]["source"] == "openalex"
     assert payload[0]["citation_count"] == 88
+    assert payload[0]["pdf_url"] == "https://example.com/paper.pdf"
 
 
 async def test_search_arxiv_tool_forwards_year_range():

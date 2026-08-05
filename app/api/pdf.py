@@ -7,17 +7,20 @@ from typing import Annotated
 from uuid import uuid4
 
 import aiofiles
+import httpx
 from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
-from fastapi.responses import StreamingResponse
+from fastapi.responses import FileResponse, StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.concurrency import run_in_threadpool
 
 from app.core.database import get_db
 from app.models.uploaded_pdf import UploadedPDF
-from app.schemas.pdf import PDFUploadResponse, TranslateRequest
+from app.schemas.pdf import PDFImportRequest, PDFUploadResponse, TranslateRequest
 
 router = APIRouter(prefix="/api/pdf", tags=["pdf"])
 TRANSLATE_CHUNK_CHARS = 2000
+DOWNLOAD_TIMEOUT_SECONDS = 30.0
+DOWNLOAD_USER_AGENT = "ScholarMate/0.1 (graduation project)"
 
 
 @router.post("/upload", response_model=PDFUploadResponse)
@@ -30,10 +33,58 @@ async def upload_pdf(
     if not filename.lower().endswith(".pdf"):
         raise HTTPException(status_code=400, detail="仅支持 PDF 文件")
 
-    settings = request.app.state.settings
     content = await file.read()
+    return await _store_and_process(request, session, content, filename)
+
+
+@router.post("/import-url", response_model=PDFUploadResponse)
+async def import_pdf_from_url(
+    request: Request,
+    payload: PDFImportRequest,
+    session: Annotated[AsyncSession, Depends(get_db)],
+) -> PDFUploadResponse:
+    """从外部 URL 下载 PDF 并入库（检索结果一键导入翻译）。"""
+    try:
+        content = await _download_pdf(payload.url)
+    except httpx.UnsupportedProtocol as exc:
+        raise HTTPException(status_code=400, detail="PDF 下载地址无效") from exc
+    except httpx.HTTPStatusError as exc:
+        raise HTTPException(
+            status_code=502,
+            detail=f"PDF 下载失败（HTTP {exc.response.status_code}）",
+        ) from exc
+    except httpx.HTTPError as exc:
+        raise HTTPException(status_code=400, detail="PDF 下载失败，请检查链接") from exc
+
+    original_name = (
+        f"{payload.title.strip()[:80]}.pdf"
+        if payload.title.strip()
+        else "remote_paper.pdf"
+    )
+    return await _store_and_process(request, session, content, original_name)
+
+
+async def _download_pdf(url: str) -> bytes:
+    async with httpx.AsyncClient(
+        timeout=DOWNLOAD_TIMEOUT_SECONDS,
+        headers={"User-Agent": DOWNLOAD_USER_AGENT},
+        follow_redirects=True,
+    ) as client:
+        response = await client.get(url)
+        response.raise_for_status()
+        return response.content
+
+
+async def _store_and_process(
+    request: Request,
+    session: AsyncSession,
+    content: bytes,
+    original_name: str,
+) -> PDFUploadResponse:
+    """校验 → 落盘 → 建记录 → 提取/分块/向量化，上传与 URL 导入共用。"""
     if not content.startswith(b"%PDF"):
         raise HTTPException(status_code=400, detail="文件内容不是有效的 PDF")
+    settings = request.app.state.settings
     max_bytes = settings.max_upload_mb * 1024 * 1024
     if len(content) > max_bytes:
         raise HTTPException(
@@ -47,7 +98,7 @@ async def upload_pdf(
 
     record = UploadedPDF(
         filename=stored_name,
-        original_name=filename,
+        original_name=original_name,
         file_path=str(path),
         status="processing",
     )
@@ -63,7 +114,7 @@ async def upload_pdf(
         chunks = pdf_service.chunk_paragraphs(result.text)
         vectors = await embedding_service.embed_texts(chunks)
         await run_in_threadpool(
-            vector_store.add_document, record.id, filename, chunks, vectors
+            vector_store.add_document, record.id, original_name, chunks, vectors
         )
         record.status = "ready"
         record.page_count = result.page_count
@@ -73,7 +124,26 @@ async def upload_pdf(
         await session.commit()
         raise HTTPException(status_code=500, detail=f"PDF 处理失败: {exc}") from exc
 
-    return PDFUploadResponse(pdf_id=record.id, filename=filename, status=record.status)
+    return PDFUploadResponse(
+        pdf_id=record.id, filename=original_name, status=record.status
+    )
+
+
+@router.get("/{pdf_id}/file")
+async def download_pdf_file(
+    pdf_id: int,
+    session: Annotated[AsyncSession, Depends(get_db)],
+) -> FileResponse:
+    """以 inline 方式返回本地 PDF，供浏览器/系统查看器直接打开。"""
+    row = await session.get(UploadedPDF, pdf_id)
+    if row is None:
+        raise HTTPException(status_code=404, detail="论文不存在")
+    return FileResponse(
+        row.file_path,
+        media_type="application/pdf",
+        filename=row.original_name,
+        content_disposition_type="inline",
+    )
 
 
 @router.post("/{pdf_id}/translate")

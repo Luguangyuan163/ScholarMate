@@ -40,10 +40,12 @@ async def import_papers(
             if (
                 item.citation_count > existing.citation_count
                 or item.year != existing.year
+                or (item.pdf_url and item.pdf_url != existing.pdf_url)
             ):
                 existing.citation_count = item.citation_count
                 existing.year = item.year
                 existing.url = item.url
+                existing.pdf_url = item.pdf_url
                 updated += 1
             else:
                 skipped += 1
@@ -58,6 +60,7 @@ async def import_papers(
                 year=item.year,
                 citation_count=item.citation_count,
                 url=item.url,
+                pdf_url=item.pdf_url,
             )
         )
         imported += 1
@@ -83,6 +86,7 @@ async def list_collection(
             "year": row.year,
             "citation_count": row.citation_count,
             "url": row.url,
+            "pdf_url": row.pdf_url,
         }
         for row in rows
     ]

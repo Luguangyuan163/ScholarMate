@@ -15,6 +15,7 @@ S2_JSON = {
             "citationCount": 1200,
             "externalIds": {"ArXiv": "2106.09685"},
             "url": "https://www.semanticscholar.org/paper/abc123",
+            "openAccessPdf": {"url": "https://arxiv.org/pdf/2106.09685v2"},
         }
     ]
 }
@@ -52,6 +53,45 @@ def test_parse_s2_response():
     assert item.external_id == "2106.09685"
     assert item.authors == ["Edward J. Hu"]
     assert item.year == 2021
+    assert item.pdf_url == "https://arxiv.org/pdf/2106.09685v2"
+
+
+def test_parse_s2_response_falls_back_to_arxiv_pdf():
+    payload = {
+        "data": [
+            {
+                "paperId": "abc124",
+                "title": "No OA paper",
+                "authors": [],
+                "year": 2022,
+                "citationCount": 3,
+                "externalIds": {"ArXiv": "2201.00001"},
+                "url": "https://www.semanticscholar.org/paper/abc124",
+                "openAccessPdf": None,
+            }
+        ]
+    }
+    items = _parse_s2_response(payload)
+    assert items[0].pdf_url == "https://arxiv.org/pdf/2201.00001"
+
+
+def test_parse_s2_response_without_any_pdf():
+    payload = {
+        "data": [
+            {
+                "paperId": "abc125",
+                "title": "No link",
+                "authors": [],
+                "year": 2022,
+                "citationCount": 3,
+                "externalIds": {},
+                "url": "https://www.semanticscholar.org/paper/abc125",
+                "openAccessPdf": None,
+            }
+        ]
+    }
+    items = _parse_s2_response(payload)
+    assert items[0].pdf_url == ""
 
 
 async def test_search_sends_query_fields_and_key():

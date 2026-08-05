@@ -12,7 +12,7 @@ from tenacity import retry, retry_if_exception, stop_after_attempt, wait_exponen
 from app.schemas.search import PaperItem
 
 S2_SEARCH_URL = "https://api.semanticscholar.org/graph/v1/paper/search"
-S2_FIELDS = "title,abstract,authors.name,year,citationCount,externalIds,url"
+S2_FIELDS = "title,abstract,authors.name,year,citationCount,externalIds,url,openAccessPdf"
 USER_AGENT = "ScholarMate/0.1 (graduation project)"
 REQUEST_TIMEOUT_SECONDS = 30.0
 MIN_REQUEST_INTERVAL_SECONDS = 1.0  # 无 key 共享限流约 100 次/5 分钟，留安全间隔
@@ -98,6 +98,10 @@ def _parse_s2_response(data: dict) -> list[PaperItem]:
         authors = [a.get("name", "") for a in paper.get("authors", []) if a.get("name")]
         external_ids = paper.get("externalIds") or {}
         arxiv_id = external_ids.get("ArXiv", "")
+        open_access = paper.get("openAccessPdf") or {}
+        pdf_url = open_access.get("url", "") or (
+            f"https://arxiv.org/pdf/{arxiv_id}" if arxiv_id else ""
+        )
         items.append(
             PaperItem(
                 title=paper.get("title", ""),
@@ -108,6 +112,7 @@ def _parse_s2_response(data: dict) -> list[PaperItem]:
                 year=paper.get("year"),
                 citation_count=paper.get("citationCount", 0),
                 url=paper.get("url", ""),
+                pdf_url=pdf_url,
             )
         )
     return items

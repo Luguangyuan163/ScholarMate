@@ -31,3 +31,9 @@ def test_papers_page(client):
     resp = client.get("/papers")
     assert resp.status_code == 200
     assert "论文库" in resp.text
+
+
+def test_search_page(client):
+    resp = client.get("/search")
+    assert resp.status_code == 200
+    assert "检索论文" in resp.text

@@ -111,6 +111,36 @@ def test_import_updates_citation_count_on_reimport(app_settings):
         assert client.get("/api/papers/collection").json()[0]["citation_count"] == 2600
 
 
+def test_import_stores_and_updates_pdf_url(app_settings):
+    app = create_app(app_settings)
+    paper = {
+        "title": "LoRA",
+        "source": "arxiv",
+        "external_id": "2106.09685",
+        "authors": [],
+        "abstract": "",
+        "year": 2021,
+        "citation_count": 100,
+        "url": "https://arxiv.org/abs/2106.09685",
+        "pdf_url": "https://arxiv.org/pdf/2106.09685v1",
+    }
+    with TestClient(app) as client:
+        client.post("/api/papers/import", json={"papers": [paper]})
+        saved = client.get("/api/papers/collection").json()[0]
+        assert saved["pdf_url"] == "https://arxiv.org/pdf/2106.09685v1"
+
+        newer = {
+            **paper,
+            "citation_count": 101,
+            "pdf_url": "https://arxiv.org/pdf/2106.09685v2",
+        }
+        resp = client.post("/api/papers/import", json={"papers": [newer]})
+        assert resp.json() == {"imported": 0, "updated": 1, "skipped": 0}
+        assert client.get("/api/papers/collection").json()[0]["pdf_url"] == (
+            "https://arxiv.org/pdf/2106.09685v2"
+        )
+
+
 def test_delete_collection_paper(app_settings):
     app = create_app(app_settings)
     paper = {

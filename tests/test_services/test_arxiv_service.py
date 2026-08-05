@@ -42,6 +42,7 @@ def test_parse_feed():
     assert item.authors == ["Edward J. Hu"]
     assert item.year == 2021
     assert item.external_id == "2106.09685v2"
+    assert item.pdf_url == "https://arxiv.org/pdf/2106.09685v2"
 
 
 async def test_search_calls_arxiv_with_query():

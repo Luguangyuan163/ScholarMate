@@ -8,5 +8,12 @@
       {{ item.authors | join("、") }} · {{ item.year or "N/A" }}
     </p>
     <p class="abstract">{{ item.abstract[:200] }}{% if item.abstract|length > 200 %}…{% endif %}</p>
+    {% if item.pdf_url %}
+    <p class="paper-card-actions">
+      <a class="btn btn-sm btn-outline" href="{{ item.pdf_url }}" target="_blank" rel="noopener">打开 PDF</a>
+      <button class="btn btn-sm btn-outline import-translate" type="button"
+              data-url="{{ item.pdf_url }}" data-title="{{ item.title }}">导入并翻译</button>
+    </p>
+    {% endif %}
   </div>
 </li>
