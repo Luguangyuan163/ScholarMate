@@ -6,9 +6,6 @@
   <title>{% block title %}{{ app_title }}{% endblock %}</title>
   <link rel="icon" href="/static/img/logo.svg" type="image/svg+xml">
   <link rel="stylesheet" href="/static/css/app.css">
-  <script src="/static/vendor/htmx.min.js" defer></script>
-  <script src="/static/vendor/htmx-json-enc.js" defer></script>
-  <script src="/static/vendor/alpine.min.js" defer></script>
 </head>
 <body>
   <div class="app" x-data="appSidebar()" x-init="init()">
@@ -70,7 +67,13 @@
       {% block content %}{% endblock %}
     </main>
   </div>
-  <script src="/static/js/sidebar.js" defer></script>
+  <!-- 注意：所有业务脚本必须在 alpine.min.js 之前加载并定义全局组件函数，
+       因为 Alpine 3.14 CDN 构建在脚本加载后立即 queueMicrotask 启动，
+       晚于它加载的组件函数（如 chatApp / appSidebar）将无法被识别。 -->
+  <script src="/static/vendor/htmx.min.js"></script>
+  <script src="/static/vendor/htmx-json-enc.js"></script>
+  <script src="/static/js/sidebar.js"></script>
   {% block scripts %}{% endblock %}
+  <script src="/static/vendor/alpine.min.js"></script>
 </body>
 </html>

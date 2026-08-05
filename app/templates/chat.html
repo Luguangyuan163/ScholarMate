@@ -22,7 +22,7 @@
               <span class="tool-tag" x-text="t"></span>
             </template>
           </div>
-          <div class="msg-pdf" x-show="m.pdf">
+          <div class="msg-pdf" x-show="m.pdf.filename">
             <div class="msg-pdf-head">
               <span x-text="m.pdf.filename"></span>
               <span class="pdf-status" x-text="m.pdf.status"></span>
@@ -56,5 +56,5 @@
 </section>
 {% endblock %}
 {% block scripts %}
-<script src="/static/js/chat.js" defer></script>
+<script src="/static/js/chat.js"></script>
 {% endblock %}

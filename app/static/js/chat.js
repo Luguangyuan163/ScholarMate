@@ -25,7 +25,7 @@ window.chatApp = function () {
         role: m.role,
         content: m.content,
         tools: [],
-        pdf: null,
+        pdf: { filename: "", status: "", segments: [] },
       }));
       this.scrollToBottom();
     },
@@ -299,6 +299,7 @@ window.chatApp = function () {
     },
 
     pushMessage(m) {
+      if (!m.pdf) m.pdf = { filename: "", status: "", segments: [] };
       this.messages.push(m);
       this.scrollToBottom();
       return m;
