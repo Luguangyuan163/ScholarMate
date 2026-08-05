@@ -4,7 +4,12 @@ window.SSEUtil = {
   async readBody(resp, onEvent) {
     const canStream =
       resp.body && typeof resp.body.getReader === "function";
-    if (canStream) {
+    // WebView2（pywebview 桌面窗口）的 fetch 流式读取会挂起：
+    // resp.body 存在但长响应读不到数据，必须走一次性解析。
+    const isWebView2 =
+      typeof window !== "undefined" &&
+      !!(window.chrome && window.chrome.webview);
+    if (canStream && !isWebView2) {
       const reader = resp.body.getReader();
       const decoder = new TextDecoder();
       let buffer = "";
