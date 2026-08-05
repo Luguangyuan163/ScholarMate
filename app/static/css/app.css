@@ -646,6 +646,22 @@ button.sidebar-item {
   margin: 0 auto;
   padding: 0 24px;
 }
+
+.chat.translate-mode {
+  max-width: 1600px;
+}
+
+@media (min-width: 851px) {
+  .app:has(.chat.translate-mode) .content {
+    max-width: none;
+  }
+}
+
+@media (min-width: 851px) {
+  .app:has(.chat.translate-mode) .sidebar {
+    width: 220px;
+  }
+}
 .chat-main { flex: 1; min-height: 0; display: flex; flex-direction: column; }
 .chat-log {
   flex: 1;
@@ -750,22 +766,18 @@ button.sidebar-item {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
-  max-width: 860px;
+  max-width: 1600px;
   width: 100%;
   margin: 0 auto;
   padding: 24px 24px 40px;
 }
 
 .translate-main.with-preview {
-  max-width: 1440px;
+  max-width: 1600px;
   display: grid;
   grid-template-columns: 440px minmax(0, 1fr);
   gap: 18px;
   align-items: start;
-}
-
-.chat:has(.translate-main.with-preview) {
-  max-width: 1440px;
 }
 
 .translate-main.with-preview > :not(.translate-preview) {

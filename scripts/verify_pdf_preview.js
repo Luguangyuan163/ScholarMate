@@ -79,6 +79,9 @@ async function run() {
       return {
         visible:
           aside !== null && getComputedStyle(aside).display !== "none",
+        mainWidth: Math.round(
+          document.querySelector(".translate-main").getBoundingClientRect().width,
+        ),
         count: document.querySelectorAll(".preview-page").length,
         loaded: imgs.every((img) => img.naturalWidth > 0),
         countText: document.querySelector(".preview-count")
@@ -127,6 +130,9 @@ async function run() {
 
     const failures = [];
     if (!openState.visible) failures.push("原文预览面板未显示");
+    if (openState.mainWidth < 900) {
+      failures.push("翻译界面宽度不足: " + openState.mainWidth);
+    }
     if (openState.count !== 2) failures.push("页数错误: " + openState.count);
     if (!openState.loaded) failures.push("存在未加载成功的页面图片");
     if (!openState.countText.includes("2")) {

@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% block title %}工作台 - {{ app_title }}{% endblock %}
 {% block content %}
-<section class="chat" x-data="chatApp()" x-init="init()">
+<section class="chat" :class="{ 'translate-mode': view === 'translate' }" x-data="chatApp()" x-init="init()">
   <div class="chat-main" x-show="view === 'chat'">
     <div class="chat-log" id="chat-log" x-ref="log">
       <div class="chat-welcome" x-show="!messages.length && !busy">
