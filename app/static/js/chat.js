@@ -138,7 +138,8 @@ window.chatApp = function () {
           await this.saveMessage("assistant", assistant.content);
         }
         if (this.collectedPapers.length) {
-          if (localStorage.getItem("sm_auto_save") !== "0") {
+          // 默认关闭自动收藏：仅当用户显式开启时才自动入库，否则弹出确认条
+          if (localStorage.getItem("sm_auto_save") === "1") {
             await this.autoSavePapers();
           } else {
             this.suggestPapers = [...this.collectedPapers];

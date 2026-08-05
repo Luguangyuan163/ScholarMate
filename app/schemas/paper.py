@@ -19,3 +19,7 @@ class PaperImportItem(BaseModel):
 
 class PaperImportRequest(BaseModel):
     papers: list[PaperImportItem]
+
+
+class BatchDeleteRequest(BaseModel):
+    ids: list[int] = []

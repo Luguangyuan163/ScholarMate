@@ -65,6 +65,81 @@ def test_delete_rejects_path_outside_upload_dir(app_settings, tmp_path):
     assert outside.exists()
 
 
+def test_batch_delete_removes_rows_and_files(app_settings):
+    app = create_app(app_settings)
+
+    with TestClient(app) as client:
+        upload_dir = app.state.settings.pdf_upload_dir
+        upload_dir.mkdir(parents=True, exist_ok=True)
+        ids = []
+        for index in range(3):
+            pdf_path = upload_dir / f"batch{index}.pdf"
+            pdf_path.write_bytes(b"%PDF-1.7 fake")
+            ids.append(
+                _insert_paper(app, filename=f"batch{index}.pdf", file_path=str(pdf_path))
+            )
+
+        resp = client.post(
+            "/api/papers/batch-delete",
+            json={"ids": [ids[0], ids[1]]},
+        )
+        assert resp.status_code == 200
+        assert resp.json() == {"deleted": 2, "requested": 2}
+        assert not (upload_dir / "batch0.pdf").exists()
+        assert not (upload_dir / "batch1.pdf").exists()
+        assert (upload_dir / "batch2.pdf").exists()
+        remaining = client.get("/api/papers").json()
+        assert [p["id"] for p in remaining] == [ids[2]]
+
+
+def test_batch_delete_empty_ids_returns_zero(app_settings):
+    app = create_app(app_settings)
+    with TestClient(app) as client:
+        resp = client.post("/api/papers/batch-delete", json={"ids": []})
+    assert resp.status_code == 200
+    assert resp.json() == {"deleted": 0, "requested": 0}
+
+
+def test_batch_delete_skips_paths_outside_upload_dir(app_settings, tmp_path):
+    app = create_app(app_settings)
+    with TestClient(app) as client:
+        upload_dir = app.state.settings.pdf_upload_dir
+        upload_dir.mkdir(parents=True, exist_ok=True)
+        good_path = upload_dir / "good.pdf"
+        good_path.write_bytes(b"%PDF-1.7 fake")
+        outside = tmp_path / "outside.pdf"
+        outside.write_bytes(b"%PDF-1.7 fake")
+        good_id = _insert_paper(
+            app, filename="good.pdf", file_path=str(good_path)
+        )
+        outside_id = _insert_paper(
+            app, filename="outside.pdf", file_path=str(outside)
+        )
+
+        resp = client.post(
+            "/api/papers/batch-delete",
+            json={"ids": [good_id, outside_id]},
+        )
+    assert resp.json() == {"deleted": 1, "requested": 2}
+    assert outside.exists()
+
+
+def test_batch_delete_ignores_missing_ids(app_settings):
+    app = create_app(app_settings)
+    with TestClient(app) as client:
+        upload_dir = app.state.settings.pdf_upload_dir
+        upload_dir.mkdir(parents=True, exist_ok=True)
+        pdf_path = upload_dir / "only.pdf"
+        pdf_path.write_bytes(b"%PDF-1.7 fake")
+        only_id = _insert_paper(app, file_path=str(pdf_path))
+
+        resp = client.post(
+            "/api/papers/batch-delete",
+            json={"ids": [only_id, 9999]},
+        )
+    assert resp.json() == {"deleted": 1, "requested": 2}
+
+
 def test_import_papers_dedupes_and_lists(app_settings):
     app = create_app(app_settings)
     paper = {

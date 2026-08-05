@@ -245,6 +245,23 @@ input[type="file"] { font: inherit; color: var(--ink-soft); }
   padding-top: 3px;
   min-width: 26px;
 }
+.paper-check {
+  display: inline-flex;
+  align-items: center;
+  flex: none;
+  cursor: pointer;
+  padding-top: 3px;
+}
+.paper-check input {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+.paper-card.is-selected {
+  background: var(--amber-soft);
+  border-left-color: var(--amber);
+}
 .paper-card h3 {
   margin: 0 0 6px;
   font-family: var(--serif);

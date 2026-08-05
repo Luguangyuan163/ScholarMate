@@ -14,7 +14,7 @@ from starlette.concurrency import run_in_threadpool
 from app.core.database import get_db
 from app.models.paper import Paper
 from app.models.uploaded_pdf import UploadedPDF
-from app.schemas.paper import PaperImportRequest
+from app.schemas.paper import BatchDeleteRequest, PaperImportRequest
 
 router = APIRouter(prefix="/api/papers", tags=["papers"])
 
@@ -147,3 +147,39 @@ async def delete_paper(
     await session.delete(row)
     await session.commit()
     return {"deleted": pdf_id}
+
+
+@router.post("/batch-delete")
+async def batch_delete_papers(
+    payload: BatchDeleteRequest,
+    request: Request,
+    session: Annotated[AsyncSession, Depends(get_db)],
+) -> dict:
+    """批量删除本地论文库（含磁盘文件与向量索引），路径越界的记录跳过。"""
+    ids = list(dict.fromkeys(payload.ids))
+    if not ids:
+        return {"deleted": 0, "requested": 0}
+
+    rows = (
+        (
+            await session.execute(
+                select(UploadedPDF).where(UploadedPDF.id.in_(ids))
+            )
+        )
+        .scalars()
+        .all()
+    )
+    upload_dir = request.app.state.settings.pdf_upload_dir.resolve()
+    vector_store = request.app.state.vector_store
+    deleted = 0
+    for row in rows:
+        file_path = Path(row.file_path).resolve()
+        if not file_path.is_relative_to(upload_dir):
+            continue
+        await run_in_threadpool(vector_store.delete_document, row.id)
+        if file_path.exists():
+            file_path.unlink()
+        await session.delete(row)
+        deleted += 1
+    await session.commit()
+    return {"deleted": deleted, "requested": len(ids)}

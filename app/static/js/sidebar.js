@@ -6,12 +6,13 @@ window.appSidebar = function () {
     collection: [],
     loading: true,
     currentId: null,
-    autoSave: true,
+    autoSave: false,
 
     async init() {
       const params = new URLSearchParams(window.location.search);
       this.currentId = params.get("conv") ? Number(params.get("conv")) : null;
-      this.autoSave = localStorage.getItem("sm_auto_save") !== "0";
+      // 默认关闭自动收藏：仅当用户显式开启（sm_auto_save=1）时才自动入库
+      this.autoSave = localStorage.getItem("sm_auto_save") === "1";
       await this.refresh();
       window.addEventListener("library:changed", () => this.refresh());
     },

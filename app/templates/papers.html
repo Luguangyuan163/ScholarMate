@@ -9,6 +9,13 @@
 
   <div class="library-actions">
     <a class="btn" href="/translate">上传并翻译</a>
+    <label class="btn btn-sm btn-outline">
+      <input type="checkbox" :checked="allSelected" @change="toggleAll($event)">
+      全选
+    </label>
+    <button class="btn btn-sm btn-danger" @click="batchDelete()" :disabled="busy || !selected.length">
+      批量删除<span x-show="selected.length" x-text="' (' + selected.length + ')'"></span>
+    </button>
   </div>
 
   <div class="library-empty" x-show="!loading && !papers.length">
@@ -17,7 +24,10 @@
 
   <ul class="paper-list" x-show="papers.length">
     <template x-for="(p, i) in papers" :key="p.id">
-      <li class="paper-card library-item">
+      <li class="paper-card library-item" :class="{ 'is-selected': isSelected(p) }">
+        <label class="paper-check" title="选择">
+          <input type="checkbox" :checked="isSelected(p)" @change="toggleSelect(p)">
+        </label>
         <span class="cite-index" x-text="'[' + (i + 1) + ']'"></span>
         <div class="paper-card-body">
           <h3 x-text="p.filename"></h3>
