@@ -86,13 +86,35 @@ async function run() {
           : "",
         toggleText: toggle ? toggle.textContent.trim() : "",
         src0: imgs[0] ? imgs[0].src : "",
-        sideBySide: (() => {
+        previewLeft: (() => {
           const seg = document.querySelector(".segments").getBoundingClientRect();
           const pre = document.querySelector(".translate-preview").getBoundingClientRect();
-          return pre.x >= seg.x + seg.width - 5 && pre.y < seg.y + seg.height;
+          return pre.x + pre.width <= seg.x + 5 && pre.y < seg.y + seg.height;
         })(),
       };
     });
+
+    const zoomBefore = await page.evaluate(
+      () => document.querySelector(".preview-page img").getBoundingClientRect().width,
+    );
+    await page.evaluate(() => {
+      Array.from(document.querySelectorAll(".preview-tools button"))
+        .find((b) => b.textContent.includes("放大"))
+        .click();
+    });
+    await sleep(300);
+    const zoomAfter = await page.evaluate(
+      () => document.querySelector(".preview-page img").getBoundingClientRect().width,
+    );
+    await page.evaluate(() => {
+      Array.from(document.querySelectorAll(".preview-tools button"))
+        .find((b) => b.textContent.includes("适应"))
+        .click();
+    });
+    await sleep(300);
+    const zoomFit = await page.evaluate(
+      () => document.querySelector(".preview-page img").getBoundingClientRect().width,
+    );
 
     await page.evaluate(() => {
       document.querySelector(".preview-toggle").click();
@@ -116,7 +138,16 @@ async function run() {
     if (!openState.src0.includes("/api/pdf/") || !openState.src0.includes("pages/1/image")) {
       failures.push("图片 src 异常: " + openState.src0);
     }
-    if (!openState.sideBySide) failures.push("原文与翻译未左右分栏显示");
+    if (!openState.previewLeft) failures.push("原文未显示在左侧");
+    if (!(zoomAfter > zoomBefore + 5)) {
+      failures.push("放大未生效: " + zoomBefore + " -> " + zoomAfter);
+    }
+    if (!(Math.abs(zoomFit - zoomBefore) < 5)) {
+      failures.push("适应宽度未恢复: " + zoomBefore + " -> " + zoomFit);
+    }
+    if (!openState.src0.includes("scale=3")) {
+      failures.push("未使用高清渲染(scale=3): " + openState.src0);
+    }
     if (!closed) failures.push("收起后预览面板未隐藏");
     if (errors.length) failures.push("JS 错误: " + errors.join(" | "));
 
@@ -125,7 +156,7 @@ async function run() {
       process.exitCode = 1;
     } else {
       console.log(
-        "PDF PREVIEW OK: 2 pages rendered, images loaded, toggle works",
+        "PDF PREVIEW OK: 2 pages rendered, original on left, zoom works, scale=3",
       );
     }
   } finally {

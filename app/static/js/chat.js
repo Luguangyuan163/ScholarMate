@@ -21,6 +21,7 @@ window.chatApp = function () {
       maxParagraphs: 0,
       pageCount: 0,
       previewOpen: false,
+      previewZoom: 1,
       busy: false,
       source: null,
     },
@@ -309,6 +310,7 @@ window.chatApp = function () {
       this.translation.segments = [];
       this.translation.status = "";
       this.translation.previewOpen = false;
+      this.translation.previewZoom = 1;
       const meta = this.translation.papers.find(
         (p) => String(p.id) === String(pdfId),
       );
@@ -333,6 +335,7 @@ window.chatApp = function () {
       this.translation.status = "";
       this.translation.uploadStatus = "";
       this.translation.previewOpen = false;
+      this.translation.previewZoom = 1;
       this.view = "chat";
     },
 
@@ -438,6 +441,11 @@ window.chatApp = function () {
     previewPageList() {
       const count = this.translation.pageCount || 0;
       return Array.from({ length: count }, (_, i) => i + 1);
+    },
+
+    setPreviewZoom(zoom) {
+      const next = Math.min(3, Math.max(0.5, zoom));
+      this.translation.previewZoom = Number(next.toFixed(2));
     },
 
     async deleteRecord(record) {

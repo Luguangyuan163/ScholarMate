@@ -126,11 +126,25 @@
         <span>原文 PDF（保留原始排版）</span>
         <span class="preview-count" x-text="'共 ' + translation.pageCount + ' 页'"></span>
       </div>
+      <div class="preview-tools">
+        <button class="btn btn-sm btn-outline" type="button" @click="setPreviewZoom(translation.previewZoom / 1.25)"
+                :disabled="translation.previewZoom <= 0.5">缩小</button>
+        <span class="preview-zoom-label"
+              x-text="Math.round(translation.previewZoom * 100) + '%'"></span>
+        <button class="btn btn-sm btn-outline" type="button" @click="setPreviewZoom(translation.previewZoom * 1.25)"
+                :disabled="translation.previewZoom >= 3">放大</button>
+        <button class="btn btn-sm btn-outline" type="button" @click="setPreviewZoom(1)"
+                :disabled="translation.previewZoom === 1">适应宽度</button>
+      </div>
+      <p class="hint">提示：点击页面图片可在新窗口查看原图。</p>
       <div class="preview-pages">
         <template x-for="n in previewPageList()" :key="n">
           <figure class="preview-page">
-            <img :src="'/api/pdf/' + translation.pdfId + '/pages/' + n + '/image?scale=2'"
-                 loading="lazy" :alt="'原文第 ' + n + ' 页'">
+            <img :src="'/api/pdf/' + translation.pdfId + '/pages/' + n + '/image?scale=3'"
+                 :style="'width:' + (translation.previewZoom * 100) + '%'"
+                 loading="lazy" :alt="'原文第 ' + n + ' 页'"
+                 title="点击在新窗口查看原图"
+                 @click="window.open($event.currentTarget.src, '_blank')">
             <figcaption x-text="'第 ' + n + ' 页'"></figcaption>
           </figure>
         </template>
