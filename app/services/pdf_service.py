@@ -180,6 +180,25 @@ class PDFService:
             pixmap = page.get_pixmap(matrix=fitz.Matrix(scale, scale))
             return pixmap.tobytes("png")
 
+    def render_region(
+        self,
+        pdf_path: str,
+        page_index: int,
+        rect: tuple[float, float, float, float],
+        scale: float = 3.0,
+        padding: float = 6.0,
+    ) -> bytes:
+        """按 bbox 裁剪渲染段落区域为 PNG（带少量内边距），供多模态翻译识图。"""
+        with fitz.open(pdf_path) as doc:
+            if page_index < 0 or page_index >= doc.page_count:
+                raise IndexError(f"page {page_index} out of range")
+            page = doc.load_page(page_index)
+            clip = fitz.Rect(rect)
+            clip += (-padding, -padding, padding, padding)
+            clip &= page.rect
+            pixmap = page.get_pixmap(matrix=fitz.Matrix(scale, scale), clip=clip)
+            return pixmap.tobytes("png")
+
     def chunk_paragraphs(self, text: str, max_chars: int = 800) -> list[str]:
         """按段落累积分块，每块不超过 max_chars 字符。"""
         paragraphs = [p.strip() for p in text.split("\n\n") if p.strip()]

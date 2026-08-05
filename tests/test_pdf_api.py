@@ -97,14 +97,18 @@ def _wait_pdf_status(client, pdf_id: int, expected: str, timeout: float = 5.0) -
 class FakeTranslation:
     def __init__(self) -> None:
         self.calls: list[str] = []
+        self.image_calls: list[str] = []
+        self.modes: list[str] = []
 
     async def translate_paragraph(self, text: str, target_lang: str = "zh") -> str:
         self.calls.append(text)
+        self.modes.append("text")
         return f"[{target_lang}] {text}"
 
     async def translate_paragraphs(self, paragraphs, target_lang="zh", batch_size=4):
         for offset, text in enumerate(paragraphs):
             self.calls.append(text)
+            self.modes.append("batch")
             yield offset, f"[{target_lang}] {text}"
 
     async def translate_paragraphs_concurrent(
@@ -112,6 +116,24 @@ class FakeTranslation:
     ):
         for offset, text in enumerate(paragraphs):
             self.calls.append(text)
+            self.modes.append("concurrent")
+            yield offset, f"[{target_lang}] {text}"
+
+    async def translate_paragraph_with_image(
+        self, text, image_data_url, target_lang="zh"
+    ) -> str:
+        self.calls.append(text)
+        self.image_calls.append(image_data_url)
+        self.modes.append("image")
+        return f"[{target_lang}] {text}"
+
+    async def translate_paragraphs_with_images_concurrent(
+        self, items, target_lang="zh", max_concurrency=4
+    ):
+        for offset, (text, image_data_url) in enumerate(items):
+            self.calls.append(text)
+            self.image_calls.append(image_data_url)
+            self.modes.append("image-concurrent")
             yield offset, f"[{target_lang}] {text}"
 
 
@@ -506,6 +528,58 @@ def test_translate_pdf_layout_respects_max_paragraphs(app_settings, tmp_path):
         )
     assert resp.status_code == 200
     assert resp.text.count("event: segment") == 1
+
+
+def test_translate_pdf_layout_vision_sends_region_images(app_settings, tmp_path):
+    """translation_vision=True：布局流为每个待译段落裁剪区域图片并发给多模态翻译。"""
+    pdf_path = tmp_path / "vision.pdf"
+    _make_layout_pdf(pdf_path)
+    app = create_app(app_settings)
+    app.state.embedding_service = FakeEmbeddingService()
+    translation = FakeTranslation()
+    app.state.translation_service = translation
+    with TestClient(app) as client:
+        with open(pdf_path, "rb") as handle:
+            uploaded = client.post(
+                "/api/pdf/upload",
+                files={"file": ("vision.pdf", handle, "application/pdf")},
+            )
+        pdf_id = uploaded.json()["pdf_id"]
+        resp = client.get(
+            f"/api/pdf/{pdf_id}/translate-stream",
+            params={"target_lang": "zh", "mode": "layout"},
+        )
+    assert resp.status_code == 200
+    assert resp.text.count("event: segment") == 2
+    assert translation.modes == ["image-concurrent", "image-concurrent"]
+    assert len(translation.image_calls) == 2
+    assert all(
+        url.startswith("data:image/png;base64,") for url in translation.image_calls
+    )
+
+
+def test_translate_pdf_layout_disables_vision_when_configured(app_settings, tmp_path):
+    settings = app_settings.model_copy(update={"translation_vision": False})
+    pdf_path = tmp_path / "novision.pdf"
+    _make_layout_pdf(pdf_path)
+    app = create_app(settings)
+    app.state.embedding_service = FakeEmbeddingService()
+    translation = FakeTranslation()
+    app.state.translation_service = translation
+    with TestClient(app) as client:
+        with open(pdf_path, "rb") as handle:
+            uploaded = client.post(
+                "/api/pdf/upload",
+                files={"file": ("novision.pdf", handle, "application/pdf")},
+            )
+        pdf_id = uploaded.json()["pdf_id"]
+        resp = client.get(
+            f"/api/pdf/{pdf_id}/translate-stream",
+            params={"target_lang": "zh", "mode": "layout"},
+        )
+    assert resp.status_code == 200
+    assert translation.modes == ["concurrent", "concurrent"]
+    assert translation.image_calls == []
 
 
 def test_translate_pdf_reports_llm_error(app_settings, tmp_path):

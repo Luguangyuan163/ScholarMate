@@ -1,4 +1,4 @@
-"""翻译服务测试：学术提示词与批量翻译（省时省钱）。"""
+"""翻译服务测试：学术提示词、多模态识图翻译与批量翻译。"""
 
 from __future__ import annotations
 
@@ -25,17 +25,77 @@ async def test_translate_paragraph_uses_academic_prompt():
     result = await service.translate_paragraph("Hello", "zh")
     assert result == "译文：你好"
     system = llm.last_messages[0]["content"]
-    assert "学术论文" in system
-    assert "术语" in system
-    assert "中文" in system
-    assert "编号" in system
+    assert "Translate the user-provided academic text to Chinese" in system
+    assert "formulas" in system
+    assert "Output only the translation" in system
+    assert llm.last_messages[-1]["content"] == "原文：\nHello"
 
 
 async def test_translate_paragraph_maps_language_name():
     llm = FakeChatLLM()
     service = TranslationService(llm=llm)
     await service.translate_paragraph("你好", "en")
-    assert "英文" in llm.last_messages[0]["content"]
+    assert "Translate the user-provided academic text to English" in (
+        llm.last_messages[0]["content"]
+    )
+
+
+async def test_translate_paragraph_with_image_sends_multimodal_content():
+    llm = FakeChatLLM("译文")
+    service = TranslationService(llm=llm)
+    result = await service.translate_paragraph_with_image(
+        "Hello", "data:image/png;base64,AAA", "zh"
+    )
+    assert result == "译文"
+    content = llm.last_messages[-1]["content"]
+    assert content[0]["type"] == "image_url"
+    assert content[0]["image_url"]["url"] == "data:image/png;base64,AAA"
+    assert content[1]["text"] == "原文：\nHello"
+
+
+async def test_translate_paragraph_with_image_falls_back_to_text():
+    class FlakyLLM:
+        def __init__(self) -> None:
+            self.calls = 0
+
+        async def chat(self, messages, **kwargs):
+            self.calls += 1
+            content = messages[-1]["content"]
+            if isinstance(content, list):
+                raise RuntimeError("image unsupported")
+            return "回退译文"
+
+    service = TranslationService(llm=FlakyLLM())
+    result = await service.translate_paragraph_with_image(
+        "Hello", "data:image/png;base64,AAA", "zh"
+    )
+    assert result == "回退译文"
+
+
+async def test_translate_paragraphs_with_images_concurrent_yields_in_order():
+    class ImageSlowLLM:
+        def __init__(self, delays: dict[str, float]) -> None:
+            self.delays = delays
+
+        async def chat(self, messages, **kwargs):
+            content = messages[-1]["content"]
+            text = content[1]["text"] if isinstance(content, list) else content
+            key = text.split("原文：\n", 1)[-1]
+            await asyncio.sleep(self.delays[key])
+            return "T(" + key + ")"
+
+    service = TranslationService(llm=ImageSlowLLM({"slow": 0.2, "fast": 0.01}))
+    items = [
+        ("slow", "data:image/png;base64,AAA"),
+        ("fast", "data:image/png;base64,BBB"),
+    ]
+    translated = [
+        item
+        async for item in service.translate_paragraphs_with_images_concurrent(
+            items, "zh", max_concurrency=2
+        )
+    ]
+    assert translated == [(1, "T(fast)"), (0, "T(slow)")]
 
 
 class FakeBatchLLM:
@@ -115,6 +175,8 @@ class SlowLLM:
 
     async def chat(self, messages, **kwargs):
         text = messages[-1]["content"]
+        if text.startswith("原文：\n"):
+            text = text.split("原文：\n", 1)[-1]
         await asyncio.sleep(self.delays[text])
         return f"T({text})"
 

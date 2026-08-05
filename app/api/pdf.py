@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import base64
 import json
 import logging
 from collections.abc import AsyncIterator
@@ -410,14 +411,34 @@ async def _layout_translate_events(
             pending_texts.append(paragraph.text)
 
     if pending_texts:
+        settings = request.app.state.settings
+        vision = bool(getattr(settings, "translation_vision", False))
+        pending_items: list = pending_texts
+        if vision:
+            pending_items = []
+            for index in pending_indexes:
+                paragraph = paragraphs[index]
+                png = await run_in_threadpool(
+                    pdf_service.render_region,
+                    row.file_path,
+                    paragraph.page - 1,
+                    paragraph.bbox,
+                )
+                pending_items.append(
+                    (
+                        paragraph.text,
+                        "data:image/png;base64," + base64.b64encode(png).decode(),
+                    )
+                )
         try:
             async for event in _translate_pending_with_heartbeat(
                 translation,
-                pending_texts,
+                pending_items,
                 pending_indexes,
                 [p.text for p in paragraphs],
                 total,
                 payload.target_lang,
+                with_images=vision,
             ):
                 if event["type"] == "segment":
                     index = event["index"]
@@ -466,11 +487,12 @@ def _layout_segment(paragraph, translation: str) -> dict:
 
 async def _translate_pending_with_heartbeat(
     translation,
-    pending_texts: list[str],
+    pending_items: list,
     pending_indexes: list[int],
     chunks: list[str],
     total: int,
     target_lang: str,
+    with_images: bool = False,
 ) -> AsyncIterator[dict]:
     """逐段并发翻译：先完成先输出；等待期间每隔一段时间发 status 心跳。"""
     queue: asyncio.Queue = asyncio.Queue()
@@ -478,11 +500,19 @@ async def _translate_pending_with_heartbeat(
 
     async def _worker() -> None:
         try:
-            async for offset, text in translation.translate_paragraphs_concurrent(
-                pending_texts,
-                target_lang,
-                max_concurrency=TRANSLATE_BATCH_SIZE,
-            ):
+            if with_images:
+                stream = translation.translate_paragraphs_with_images_concurrent(
+                    pending_items,
+                    target_lang,
+                    max_concurrency=TRANSLATE_BATCH_SIZE,
+                )
+            else:
+                stream = translation.translate_paragraphs_concurrent(
+                    pending_items,
+                    target_lang,
+                    max_concurrency=TRANSLATE_BATCH_SIZE,
+                )
+            async for offset, text in stream:
                 await queue.put(("segment", offset, text))
         except Exception as exc:
             await queue.put(("error", exc))
@@ -498,7 +528,7 @@ async def _translate_pending_with_heartbeat(
                     queue.get(), timeout=TRANSLATE_HEARTBEAT_SECONDS
                 )
             except TimeoutError:
-                remaining = len(pending_texts) - done_count
+                remaining = len(pending_items) - done_count
                 yield {
                     "type": "status",
                     "content": (

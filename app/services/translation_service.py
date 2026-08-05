@@ -1,4 +1,4 @@
-"""LLM 翻译服务：学术提示词 + 批量翻译（省时省钱），Agent 工具依赖。"""
+"""LLM 翻译服务：千问多模态翻译（识图）+ 学术提示词 + 断点续翻，Agent 工具依赖。"""
 
 from __future__ import annotations
 
@@ -9,20 +9,21 @@ from collections.abc import AsyncIterator
 
 from app.core.llm_client import BaseLLMClient
 
-_LANG_NAMES = {"zh": "中文", "en": "英文"}
-_ACADEMIC_SYSTEM_PROMPT = (
-    "你是资深学术论文翻译专家。将下面的文本翻译为{lang}，要求："
-    "1. 术语准确、专业，专有名词与缩写遵循学界惯例"
-    "（如 LoRA、fine-tuning、attention 等可保留英文或按惯例翻译）；"
-    "2. 保持学术语体，严谨通顺，符合{lang}学术表达习惯；"
-    "3. 保留原文的段落结构、公式、引用编号与图表标记"
-    "（如 Fig. 3、Table 2、[1]）；"
-    "4. 忠于原文，不增删内容，不省略；只输出译文，不要任何解释。"
+_LANG_NAMES = {"zh": "Chinese", "en": "English"}
+_TRANSLATE_SYSTEM_PROMPT = (
+    "Translate the user-provided academic text to {lang}. "
+    "Use precise academic terminology; keep proper nouns and abbreviations "
+    "consistent with academic conventions (e.g., LoRA, fine-tuning, attention "
+    "may stay in English or be translated as customary). "
+    "Preserve formulas, citation numbers, and figure/table references "
+    "(e.g., Fig. 3, Table 2, [1]). "
+    "Be faithful to the source: do not add, omit, or explain. "
+    "Output only the translation."
 )
 _BATCH_SYSTEM_PROMPT = (
-    "你是资深学术论文翻译专家。将下面编号的段落逐段翻译为{lang}，"
-    "要求：术语准确专业、保持学术语体、保留公式/引用/编号；"
-    "只输出 JSON 字符串数组，元素顺序与段落编号一一对应，不要任何其他内容。"
+    "Translate the numbered academic paragraphs to {lang}. "
+    "Output only a JSON array of translations, one item per paragraph, "
+    "in the same order. Do not output anything else."
 )
 
 
@@ -34,13 +35,41 @@ class TranslationService:
         messages = [
             {
                 "role": "system",
-                "content": _ACADEMIC_SYSTEM_PROMPT.format(
+                "content": _TRANSLATE_SYSTEM_PROMPT.format(
                     lang=_lang_name(target_lang)
                 ),
             },
-            {"role": "user", "content": text},
+            {"role": "user", "content": "原文：\n" + text},
         ]
         return (await self._llm.chat(messages)).strip()
+
+    async def translate_paragraph_with_image(
+        self,
+        text: str,
+        image_data_url: str,
+        target_lang: str = "zh",
+    ) -> str:
+        """多模态翻译：把段落区域截图与原文字一起发给千问 VL，失败时回退纯文本。"""
+        messages = [
+            {
+                "role": "system",
+                "content": _TRANSLATE_SYSTEM_PROMPT.format(
+                    lang=_lang_name(target_lang)
+                ),
+            },
+            {
+                "role": "user",
+                "content": [
+                    {"type": "image_url", "image_url": {"url": image_data_url}},
+                    {"type": "text", "text": "原文：\n" + text},
+                ],
+            },
+        ]
+        try:
+            return (await self._llm.chat(messages)).strip()
+        except Exception:
+            # 图片不支持/调用失败时退回纯文本翻译，保证流程不断
+            return await self.translate_paragraph(text, target_lang)
 
     async def translate_paragraphs(
         self,
@@ -80,6 +109,35 @@ class TranslationService:
                 if not task.done():
                     task.cancel()
 
+    async def translate_paragraphs_with_images_concurrent(
+        self,
+        items: list[tuple[str, str]],
+        target_lang: str = "zh",
+        max_concurrency: int = 4,
+    ) -> AsyncIterator[tuple[int, str]]:
+        """并发多模态翻译：items 为 (原文, 图片 data URL)，谁先完成谁先产出。"""
+        semaphore = asyncio.Semaphore(max_concurrency)
+
+        async def _translate_one(
+            index: int, item: tuple[str, str]
+        ) -> tuple[int, str]:
+            async with semaphore:
+                return index, await self.translate_paragraph_with_image(
+                    item[0], item[1], target_lang
+                )
+
+        tasks = [
+            asyncio.create_task(_translate_one(index, item))
+            for index, item in enumerate(items)
+        ]
+        try:
+            for task in asyncio.as_completed(tasks):
+                yield await task
+        finally:
+            for task in tasks:
+                if not task.done():
+                    task.cancel()
+
     async def _translate_batch(
         self, batch: list[str], target_lang: str
     ) -> list[str]:
@@ -91,7 +149,7 @@ class TranslationService:
                 "role": "system",
                 "content": _BATCH_SYSTEM_PROMPT.format(lang=_lang_name(target_lang)),
             },
-            {"role": "user", "content": numbered},
+            {"role": "user", "content": "原文：\n" + numbered},
         ]
         raw = (await self._llm.chat(messages)).strip()
         parsed = _parse_json_array(raw)

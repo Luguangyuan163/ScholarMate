@@ -112,6 +112,25 @@ def get_llm_client(settings: Settings) -> BaseLLMClient:
     raise ValueError(f"未知 LLM_PROVIDER: {settings.llm_provider}")
 
 
+def get_translation_llm_client(settings: Settings) -> BaseLLMClient:
+    """翻译专用 LLM 客户端：默认使用千问（DashScope），与 Agent 对话 LLM 独立。"""
+    if settings.translation_provider == "qwen":
+        return OpenAICompatibleClient(
+            api_key=settings.dashscope_api_key,
+            base_url=DASHSCOPE_BASE_URL,
+            model=settings.translation_model,
+            provider="qwen",
+        )
+    if settings.translation_provider == "deepseek":
+        return OpenAICompatibleClient(
+            api_key=settings.deepseek_api_key,
+            base_url=DEEPSEEK_BASE_URL,
+            model=settings.deepseek_model,
+            provider="deepseek",
+        )
+    raise ValueError(f"未知 TRANSLATION_PROVIDER: {settings.translation_provider}")
+
+
 def _parse_arguments(raw: str | None) -> dict:
     try:
         return json.loads(raw or "{}")

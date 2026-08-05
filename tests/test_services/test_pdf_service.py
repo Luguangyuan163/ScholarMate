@@ -68,6 +68,17 @@ def test_render_page_out_of_range_raises(tmp_path):
         service.render_page(str(pdf_path), 3, scale=2.0)
 
 
+def test_render_region_returns_cropped_png(tmp_path):
+    pdf_path = tmp_path / "region.pdf"
+    _make_pdf(pdf_path, ["Low-Rank Adaptation (LoRA)", "Efficient fine-tuning."])
+    service = PDFService()
+    png = service.render_region(str(pdf_path), 0, (60, 55, 250, 90), scale=3.0)
+    assert png.startswith(b"\x89PNG")
+    assert len(png) > 500
+    with pytest.raises(IndexError):
+        service.render_region(str(pdf_path), 9, (0, 0, 100, 100))
+
+
 def test_page_count(tmp_path):
     pdf_path = tmp_path / "multi.pdf"
     doc = fitz.open()

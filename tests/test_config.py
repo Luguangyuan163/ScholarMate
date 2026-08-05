@@ -12,6 +12,9 @@ def test_defaults():
     assert settings.deepseek_model == "deepseek-v4-flash"
     assert settings.embedding_provider == "dashscope"
     assert settings.max_upload_mb == 50
+    assert settings.translation_provider == "qwen"
+    assert settings.translation_model == "qwen-vl-max"
+    assert settings.translation_vision is True
 
 
 def test_env_override(monkeypatch):

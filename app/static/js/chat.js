@@ -533,7 +533,14 @@ window.chatApp = function () {
     updateLayoutScales() {
       if (this.view !== "translate") return;
       const pageEls = document.querySelectorAll(".layout-page");
-      if (!pageEls.length) return;
+      if (!pageEls.length) {
+        // 页面元素尚未渲染（Alpine 异步挂载）时稍后重试，避免字号丢失
+        if (this.translation.layoutMode) {
+          clearTimeout(this._scaleTimer);
+          this._scaleTimer = setTimeout(() => this.updateLayoutScales(), 120);
+        }
+        return;
+      }
       const scales = {};
       pageEls.forEach((el) => {
         const page = Number(el.dataset.page);
@@ -544,6 +551,10 @@ window.chatApp = function () {
       });
       this.translation.pageScales = scales;
       this.translation.scaleTick += 1;
+      if (Object.keys(scales).length < pageEls.length) {
+        clearTimeout(this._scaleTimer);
+        this._scaleTimer = setTimeout(() => this.updateLayoutScales(), 120);
+      }
     },
 
     hoverPara(seg) {

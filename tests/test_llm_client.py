@@ -13,6 +13,7 @@ from app.core.llm_client import (
     OpenAICompatibleClient,
     _parse_arguments,
     get_llm_client,
+    get_translation_llm_client,
 )
 
 
@@ -133,6 +134,37 @@ def test_factory_qwen():
     client = get_llm_client(settings)
     assert client.provider == "qwen"
     assert client.base_url == "https://dashscope.aliyuncs.com/compatible-mode/v1"
+
+
+def test_translation_factory_qwen_default():
+    settings = Settings(
+        _env_file=None,
+        dashscope_api_key="k",
+        translation_model="qwen-vl-max",
+    )
+    client = get_translation_llm_client(settings)
+    assert client.provider == "qwen"
+    assert client.model == "qwen-vl-max"
+    assert client.base_url == "https://dashscope.aliyuncs.com/compatible-mode/v1"
+
+
+def test_translation_factory_deepseek():
+    settings = Settings(
+        _env_file=None,
+        translation_provider="deepseek",
+        deepseek_api_key="k",
+        deepseek_model="deepseek-v4-flash",
+    )
+    client = get_translation_llm_client(settings)
+    assert client.provider == "deepseek"
+    assert client.model == "deepseek-v4-flash"
+    assert client.base_url == "https://api.deepseek.com"
+
+
+def test_translation_factory_unknown_provider_raises():
+    settings = Settings(_env_file=None, translation_provider="nope")
+    with pytest.raises(ValueError):
+        get_translation_llm_client(settings)
 
 
 def test_factory_unknown_provider_raises():

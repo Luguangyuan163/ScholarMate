@@ -36,6 +36,11 @@ class Settings(BaseSettings):
     embedding_provider: str = "dashscope"
     embedding_model: str = "text-embedding-v3"
 
+    # 翻译专用 LLM（默认千问，支持识图；与 Agent 对话 LLM 相互独立）
+    translation_provider: str = "qwen"
+    translation_model: str = "qwen-vl-max"
+    translation_vision: bool = True
+
     # 外部 API
     semantic_scholar_api_key: str = ""
     openalex_mailto: str = ""
