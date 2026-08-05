@@ -80,15 +80,35 @@ def test_import_papers_dedupes_and_lists(app_settings):
     with TestClient(app) as client:
         first = client.post("/api/papers/import", json={"papers": [paper]})
         assert first.status_code == 200
-        assert first.json() == {"imported": 1, "skipped": 0}
+        assert first.json() == {"imported": 1, "updated": 0, "skipped": 0}
 
         again = client.post("/api/papers/import", json={"papers": [paper]})
-        assert again.json() == {"imported": 0, "skipped": 1}
+        assert again.json() == {"imported": 0, "updated": 0, "skipped": 1}
 
         collection = client.get("/api/papers/collection")
         assert collection.status_code == 200
         assert len(collection.json()) == 1
         assert collection.json()[0]["citation_count"] == 2509
+
+
+def test_import_updates_citation_count_on_reimport(app_settings):
+    app = create_app(app_settings)
+    paper = {
+        "title": "LoRA",
+        "source": "arxiv",
+        "external_id": "2106.09685",
+        "authors": [],
+        "abstract": "",
+        "year": 2021,
+        "citation_count": 100,
+        "url": "",
+    }
+    newer = {**paper, "citation_count": 2600}
+    with TestClient(app) as client:
+        client.post("/api/papers/import", json={"papers": [paper]})
+        resp = client.post("/api/papers/import", json={"papers": [newer]})
+        assert resp.json() == {"imported": 0, "updated": 1, "skipped": 0}
+        assert client.get("/api/papers/collection").json()[0]["citation_count"] == 2600
 
 
 def test_delete_collection_paper(app_settings):

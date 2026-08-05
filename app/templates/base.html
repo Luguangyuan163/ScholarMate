@@ -53,6 +53,10 @@
           上传 PDF 入库
           <input type="file" accept="application/pdf" hidden @change="uploadPdf($event)">
         </label>
+        <label class="sidebar-toggle">
+          <input type="checkbox" x-model="autoSave" @change="persistAutoSave()">
+          <span>自动收藏对话论文</span>
+        </label>
       </nav>
 
       <nav class="sidebar-footer">

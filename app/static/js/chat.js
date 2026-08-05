@@ -63,7 +63,13 @@ window.chatApp = function () {
           for (const part of parts) this.handleEvent(part, assistant);
         }
         if (assistant.content) await this.saveMessage("assistant", assistant.content);
-        if (this.collectedPapers.length) this.suggestPapers = [...this.collectedPapers];
+        if (this.collectedPapers.length) {
+          if (localStorage.getItem("sm_auto_save") !== "0") {
+            await this.autoSavePapers();
+          } else {
+            this.suggestPapers = [...this.collectedPapers];
+          }
+        }
       } catch (err) {
         assistant.content = "请求失败: " + err.message;
       } finally {
@@ -128,19 +134,37 @@ window.chatApp = function () {
       if (resp.ok) {
         const data = await resp.json();
         this.suggestPapers = [];
-        this.pushMessage({
-          role: "assistant",
-          content:
-            "已存入论文库 " +
-            data.imported +
-            " 篇" +
-            (data.skipped ? "（跳过重复 " + data.skipped + " 篇）" : "") +
-            "。",
-        });
+        this.pushMessage({ role: "assistant", content: this.importSummary(data) });
         window.dispatchEvent(new CustomEvent("library:changed"));
       } else {
         alert("保存失败: HTTP " + resp.status);
       }
+    },
+
+    async autoSavePapers() {
+      const papers = [...this.collectedPapers];
+      this.collectedPapers = [];
+      const resp = await fetch("/api/papers/import", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ papers: papers }),
+      });
+      if (resp.ok) {
+        const data = await resp.json();
+        this.pushMessage({
+          role: "assistant",
+          content: "已自动收藏论文：" + this.importSummary(data),
+        });
+        window.dispatchEvent(new CustomEvent("library:changed"));
+      }
+    },
+
+    importSummary(data) {
+      const parts = [];
+      if (data.imported) parts.push("新增 " + data.imported + " 篇");
+      if (data.updated) parts.push("更新引用量 " + data.updated + " 篇");
+      if (data.skipped) parts.push("跳过重复 " + data.skipped + " 篇");
+      return parts.length ? parts.join("，") + "。" : "无变化。";
     },
 
     async attachPdf(event) {

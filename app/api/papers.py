@@ -24,8 +24,9 @@ async def import_papers(
     payload: PaperImportRequest,
     session: Annotated[AsyncSession, Depends(get_db)],
 ) -> dict:
-    """批量收藏论文元数据（按 source + external_id 去重）。"""
+    """批量收藏论文元数据；已存在时更新引用量/年份，保持论文库最新。"""
     imported = 0
+    updated = 0
     skipped = 0
     for item in payload.papers:
         exists = await session.execute(
@@ -34,8 +35,18 @@ async def import_papers(
                 Paper.external_id == item.external_id,
             )
         )
-        if exists.scalar_one_or_none() is not None:
-            skipped += 1
+        existing = exists.scalar_one_or_none()
+        if existing is not None:
+            if (
+                item.citation_count > existing.citation_count
+                or item.year != existing.year
+            ):
+                existing.citation_count = item.citation_count
+                existing.year = item.year
+                existing.url = item.url
+                updated += 1
+            else:
+                skipped += 1
             continue
         session.add(
             Paper(
@@ -51,7 +62,7 @@ async def import_papers(
         )
         imported += 1
     await session.commit()
-    return {"imported": imported, "skipped": skipped}
+    return {"imported": imported, "updated": updated, "skipped": skipped}
 
 
 @router.get("/collection")

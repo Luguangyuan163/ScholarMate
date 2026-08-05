@@ -528,6 +528,18 @@ input[type="file"] { font: inherit; color: var(--ink-soft); }
   margin-top: 10px;
   cursor: pointer;
 }
+.sidebar-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+  padding: 2px 4px;
+  font-size: 12px;
+  color: var(--ink-soft);
+  cursor: pointer;
+  user-select: none;
+}
+.sidebar-toggle input { accent-color: var(--accent); }
 .sidebar-footer {
   margin-top: auto;
   display: flex;

@@ -6,12 +6,18 @@ window.appSidebar = function () {
     collection: [],
     loading: true,
     currentId: null,
+    autoSave: true,
 
     async init() {
       const params = new URLSearchParams(window.location.search);
       this.currentId = params.get("conv") ? Number(params.get("conv")) : null;
+      this.autoSave = localStorage.getItem("sm_auto_save") !== "0";
       await this.refresh();
       window.addEventListener("library:changed", () => this.refresh());
+    },
+
+    persistAutoSave() {
+      localStorage.setItem("sm_auto_save", this.autoSave ? "1" : "0");
     },
 
     async refresh() {
