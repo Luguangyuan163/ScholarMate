@@ -507,15 +507,56 @@ window.chatApp = function () {
     },
 
     layoutPageStyle(page) {
-      const seg = this.layoutPageSegs(page)[0];
-      const width = seg ? seg.page_width : 0;
-      const height = seg ? seg.page_height : 0;
-      const style = { width: this.translation.previewZoom * 100 + "%" };
-      if (width && height) style.aspectRatio = width + " / " + height;
+      return { width: this.translation.previewZoom * 100 + "%" };
+    },
+
+    layoutColumns(page) {
+      const segs = this.layoutPageSegs(page);
+      if (!segs.length) return [];
+      const pageWidth = segs[0].page_width || 1;
+      const xs = segs.map((s) => s.bbox[0]).sort((a, b) => a - b);
+      const ranges = [];
+      let current = [xs[0]];
+      for (let i = 1; i < xs.length; i++) {
+        if (xs[i] - current[current.length - 1] > Math.max(20, pageWidth * 0.22)) {
+          ranges.push([current[0], current[current.length - 1]]);
+          current = [xs[i]];
+        } else {
+          current.push(xs[i]);
+        }
+      }
+      ranges.push([current[0], current[current.length - 1]]);
+      const columnOf = (x) => {
+        for (let i = 0; i < ranges.length; i++) {
+          if (x <= ranges[i][1] + 0.01) return i;
+        }
+        return ranges.length - 1;
+      };
+      const columns = ranges.map(() => []);
+      for (const seg of segs) columns[columnOf(seg.bbox[0])].push(seg);
+      return columns;
+    },
+
+    layoutColStyle(col) {
+      if (!col.length) return {};
+      const pageWidth = col[0].page_width || 1;
+      const x0 = Math.min(...col.map((s) => s.bbox[0]));
+      const x1 = Math.max(...col.map((s) => s.bbox[2]));
+      const width = Math.min(100, ((x1 - x0) / pageWidth) * 100 + 1.5);
+      return { width: width + "%" };
+    },
+
+    layoutParaFlowStyle(seg) {
+      const scale = this.translation.pageScales[seg.page] || 0;
+      const style = { fontWeight: seg.bold ? 700 : 400 };
+      if (scale > 0 && seg.font_size) {
+        style.fontSize = Math.max(11, seg.font_size * scale * 1.35) + "px";
+      }
       return style;
     },
 
     layoutParaStyle(seg) {
+      // 左侧原文页的透明定位层（用于悬停/点击定位），保持绝对定位
       if (!seg.bbox || !seg.page_width || !seg.page_height) return {};
       const scale = this.translation.pageScales[seg.page] || 0;
       const style = {

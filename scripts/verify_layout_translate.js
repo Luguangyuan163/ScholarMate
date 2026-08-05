@@ -74,8 +74,8 @@ async function run() {
       const pages = document.querySelectorAll(".layout-page");
       const paras = Array.from(document.querySelectorAll(".layout-para"));
       const zones = document.querySelectorAll(".layout-zone");
-      const firstPara = paras[0] ? paras[0].getBoundingClientRect() : null;
-      const firstStyle = paras[0] ? paras[0].style : null;
+      const firstZoneStyle = zones[0] ? zones[0].style : null;
+      const firstParaStyle = paras[0] ? getComputedStyle(paras[0]) : null;
       const secondStyle = paras[1] ? paras[1].style : null;
       const segmentsHidden =
         document.querySelector(".segments") !== null &&
@@ -91,10 +91,11 @@ async function run() {
         zoneCount: zones.length,
         segmentsHidden: segmentsHidden,
         previewOpen: previewOpen,
-        left: firstStyle ? firstStyle.left : "",
-        top: firstStyle ? firstStyle.top : "",
-        fontSize: firstStyle ? firstStyle.fontSize : "",
-        fontWeight: firstStyle ? firstStyle.fontWeight : "",
+        zoneLeft: firstZoneStyle ? firstZoneStyle.left : "",
+        zoneTop: firstZoneStyle ? firstZoneStyle.top : "",
+        fontSize: firstParaStyle ? firstParaStyle.fontSize : "",
+        paraPosition: firstParaStyle ? firstParaStyle.position : "",
+        fontWeight: firstParaStyle ? firstParaStyle.fontWeight : "",
         secondFontWeight: secondStyle ? secondStyle.fontWeight : "",
         pageWidth: pages[0] ? Math.round(pages[0].getBoundingClientRect().width) : 0,
       };
@@ -176,8 +177,6 @@ async function run() {
     );
 
     const failures = [];
-    const expectedLeft = (72 / 612) * 100;
-    const expectedTop = (60 / 792) * 100;
     if (
       layoutState.pageCount !== 2 ||
       layoutState.paraCount !== 4 ||
@@ -189,13 +188,16 @@ async function run() {
       failures.push("布局/预览切换异常: " + JSON.stringify(layoutState));
     }
     if (
-      Math.abs(parseFloat(layoutState.left) - expectedLeft) > 0.2 ||
-      Math.abs(parseFloat(layoutState.top) - expectedTop) > 0.2
+      Math.abs(parseFloat(layoutState.zoneLeft) - (72 / 612) * 100) > 0.2 ||
+      Math.abs(parseFloat(layoutState.zoneTop) - (60 / 792) * 100) > 0.2
     ) {
-      failures.push("译文坐标未对齐: " + JSON.stringify(layoutState));
+      failures.push("左侧原文定位层坐标异常: " + JSON.stringify(layoutState));
     }
     if (!layoutState.fontSize || parseFloat(layoutState.fontSize) <= 9) {
       failures.push("译文字号过小: " + JSON.stringify(layoutState));
+    }
+    if (layoutState.paraPosition !== "static") {
+      failures.push("译文段落未使用流式布局: " + JSON.stringify(layoutState));
     }
     if (layoutState.secondFontWeight !== "700") {
       failures.push("加粗段落未应用粗体: " + JSON.stringify(layoutState));

@@ -112,27 +112,31 @@
 
     <div class="layout-pages" :class="'mode-' + translation.rightMode" x-show="translation.layoutMode">
       <div class="layout-tools">
-        <span class="hint">版面对照：左侧原文，右侧按原 PDF 坐标排版的译文；点击任一段落可双向定位，点击译文可显示对应原文。</span>
+        <span class="hint">版面对照：左侧原文，右侧按原 PDF 分栏流式排布的译文（避免文字堆叠）；点击任一段落可双向定位，点击译文可显示对应原文。</span>
       </div>
       <template x-for="page in layoutPageList()" :key="page">
         <div class="layout-page" :data-page="page"
              :data-page-width="layoutPageWidth(page)"
              :data-page-height="layoutPageHeight(page)"
              :style="layoutPageStyle(page)">
-          <img class="layout-bg"
-               :src="'/api/pdf/' + translation.pdfId + '/pages/' + page + '/image?scale=3'"
-               loading="lazy" alt="" @load="updateLayoutScales()">
-          <template x-for="seg in layoutPageSegs(page)" :key="seg.index">
-            <div class="layout-para" :class="{ hovered: isHovered(seg) }"
-                 :data-para="seg.page + '-' + seg.index" :style="layoutParaStyle(seg)"
-                 @mouseenter="hoverPara(seg)" @mouseleave="hoverPara(null)"
-                 @click="focusPara(seg, $event)">
-              <div class="layout-para-src"
-                   x-show="translation.rightMode === 'contrast' || seg.showSrc"
-                   x-text="seg.source"></div>
-              <div class="layout-para-trans" x-text="seg.translation"></div>
-            </div>
-          </template>
+          <div class="layout-flow">
+            <template x-for="(col, ci) in layoutColumns(page)" :key="ci">
+              <div class="layout-col" :style="layoutColStyle(col)">
+                <template x-for="seg in col" :key="seg.index">
+                  <div class="layout-para" :class="{ hovered: isHovered(seg) }"
+                       :data-para="seg.page + '-' + seg.index"
+                       :style="layoutParaFlowStyle(seg)"
+                       @mouseenter="hoverPara(seg)" @mouseleave="hoverPara(null)"
+                       @click="toggleParaSource(seg); focusPara(seg, $event)">
+                    <div class="layout-para-src"
+                         x-show="translation.rightMode === 'contrast' || seg.showSrc"
+                         x-text="seg.source"></div>
+                    <div class="layout-para-trans" x-text="seg.translation"></div>
+                  </div>
+                </template>
+              </div>
+            </template>
+          </div>
         </div>
       </template>
       <div class="placeholder"

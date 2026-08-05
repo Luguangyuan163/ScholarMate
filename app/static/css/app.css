@@ -979,44 +979,39 @@ button.sidebar-item {
   border: 1px solid var(--line);
   border-radius: 4px;
   box-shadow: 0 2px 10px rgba(0, 0, 0, 0.09);
-  overflow: hidden;
+  padding: 4% 4.5% 5%;
 }
 
-.layout-bg {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  object-fit: fill;
-  pointer-events: none;
-  opacity: 0.07;
+.layout-flow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 3%;
+  align-items: flex-start;
 }
 
-.layout-pages.mode-contrast .layout-bg {
-  opacity: 0;
+.layout-col {
+  flex: 0 0 auto;
+  min-width: 0;
 }
 
 .layout-para {
-  position: absolute;
-  z-index: 1;
+  position: static;
   color: var(--ink);
-  line-height: 1.4;
+  line-height: 1.5;
   overflow-wrap: anywhere;
   word-break: break-word;
   cursor: pointer;
   border-radius: 2px;
+  margin-bottom: 0.85em;
   transition: background 0.12s ease, box-shadow 0.12s ease;
 }
 
 .layout-pages.mode-contrast .layout-para {
   color: var(--accent-deep);
-  background: rgba(255, 253, 248, 0.88);
-  box-shadow: 0 0 0 1px rgba(200, 192, 176, 0.55);
 }
 
 .layout-para:hover,
 .layout-para.hovered {
-  z-index: 2;
   background: var(--amber-soft);
   box-shadow: 0 0 0 1px var(--amber);
 }
