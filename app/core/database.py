@@ -6,9 +6,12 @@ from collections.abc import AsyncIterator
 from pathlib import Path
 
 from fastapi import Request
-from sqlalchemy import event, text
+from sqlalchemy import event, inspect, text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import DeclarativeBase
+
+LEGACY_PAPERS_TABLE = "papers"
+LEGACY_PAPERS_ENTITY_MARKER = "normalized_title"
 
 
 class Base(DeclarativeBase):
@@ -18,25 +21,41 @@ class Base(DeclarativeBase):
 class Database:
     def __init__(self, url: str) -> None:
         self.url = url
+        self.is_sqlite = url.startswith("sqlite")
         self.engine = create_async_engine(url)
         self.session_factory = async_sessionmaker(self.engine, expire_on_commit=False)
-        if url.startswith("sqlite"):
+        if self.is_sqlite:
             event.listen(self.engine.sync_engine, "connect", _enable_sqlite_pragmas)
             _ensure_sqlite_parent(url)
 
     async def create_all(self) -> None:
         async with self.engine.begin() as conn:
+            await _drop_legacy_link_papers_table(conn)
             await conn.run_sync(Base.metadata.create_all)
-            if self.url.startswith("sqlite"):
-                await _migrate_sqlite(conn)
 
     async def close(self) -> None:
         await self.engine.dispose()
 
 
-async def _migrate_sqlite(conn) -> None:
-    """轻量兼容迁移：本地论文库只保留本地 PDF，移除旧的链接论文表。"""
-    await conn.execute(text("DROP TABLE IF EXISTS papers"))
+async def _drop_legacy_link_papers_table(conn) -> None:
+    """清理旧版「链接论文」表。
+
+    旧表与新版论文实体表同名 ``papers``，因此在删除前先确认它缺少实体列
+    ``normalized_title``；否则会把知识图谱的论文实体表一并删掉。
+    """
+
+    def _is_legacy_table(sync_conn) -> bool:
+        inspector = inspect(sync_conn)
+        if not inspector.has_table(LEGACY_PAPERS_TABLE):
+            return False
+        columns = {
+            column["name"]
+            for column in inspector.get_columns(LEGACY_PAPERS_TABLE)
+        }
+        return LEGACY_PAPERS_ENTITY_MARKER not in columns
+
+    if await conn.run_sync(_is_legacy_table):
+        await conn.execute(text(f"DROP TABLE IF EXISTS {LEGACY_PAPERS_TABLE}"))
 
 
 def _enable_sqlite_pragmas(dbapi_connection, _connection_record) -> None:

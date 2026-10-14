@@ -15,6 +15,7 @@ dependencies = [
     "jinja2>=3.1,<4.0",
     "sqlalchemy>=2.0,<3.0",
     "aiosqlite>=0.20",
+    "aiomysql>=0.2,<1.0",
     "pydantic>=2.0,<3.0",
     "pydantic-settings>=2.0,<3.0",
     "python-dotenv>=1.0,<2.0",
