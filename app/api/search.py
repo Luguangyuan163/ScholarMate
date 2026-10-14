@@ -9,14 +9,54 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import HTMLResponse, Response
 from starlette.concurrency import run_in_threadpool
 
-from app.schemas.search import PaperItem, SearchRequest, SearchResponse
+from app.schemas.search import (
+    PaperItem,
+    SearchRequest,
+    SearchResponse,
+    SearchRunRequest,
+    SearchRunResponse,
+)
 from app.services.arxiv_service import ArxivService
 from app.services.cache_service import SearchCacheStore
 from app.services.openalex_service import OpenAlexService
 from app.services.semantic_scholar_service import SemanticScholarService
+from app.services.source_factory import build_orchestrator, build_source_registry
 from app.services.vector_store_service import VectorHit, VectorStoreService
 
 router = APIRouter(prefix="/api/search", tags=["search"])
+
+
+@router.get("/sources")
+async def list_sources(request: Request) -> dict:
+    """可用检索来源清单，供前端勾选。"""
+    registry = _registry_for(request)
+    return {"sources": registry.names(), "all": "all"}
+
+
+@router.post("/run")
+async def run_multi_keyword_search(
+    request: Request,
+    payload: SearchRunRequest,
+) -> SearchRunResponse:
+    """多关键词检索：并行多源、归一去重、打分并落库。"""
+    orchestrator = _orchestrator_for(request)
+    return await orchestrator.run(payload)
+
+
+def _registry_for(request: Request):
+    registry = getattr(request.app.state, "source_registry", None)
+    if registry is None:
+        registry = build_source_registry(request.app.state)
+        request.app.state.source_registry = registry
+    return registry
+
+
+def _orchestrator_for(request: Request):
+    orchestrator = getattr(request.app.state, "search_orchestrator", None)
+    if orchestrator is None:
+        orchestrator = build_orchestrator(request.app)
+        request.app.state.search_orchestrator = orchestrator
+    return orchestrator
 
 
 def _get_arxiv_service(request: Request) -> ArxivService:

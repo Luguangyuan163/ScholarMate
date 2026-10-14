@@ -24,6 +24,9 @@ def _is_transient(exc: BaseException) -> bool:
 
 
 class ArxivService:
+    name = "arxiv"
+    domains: tuple[str, ...] = ("preprint", "physics", "math", "cs")
+
     def __init__(self, client: httpx.AsyncClient | None = None) -> None:
         self._client = client or httpx.AsyncClient(
             timeout=REQUEST_TIMEOUT_SECONDS,

@@ -92,9 +92,24 @@
 | OpenAlex | 全学科开放元数据 | 无（`mailto` 进礼貌池） | 免 key 兜底 + 引用关系 | 已接入 |
 | Crossref | 全学科期刊与会议论文，DOI 权威 | 无（`mailto` 进礼貌池） | DOI 归一与期刊论文覆盖 | 待接入 |
 | Europe PMC | 生物医学（含 PubMed 全文记录） | 无 | 生物医学领域覆盖 | 待接入 |
-| DBLP | 计算机会议与期刊 | 无 | 计算机领域会议论文覆盖 | 待接入 |
+| DOAJ | 开放获取期刊 | 无 | 开放获取期刊覆盖 | 待接入 |
 
-选这六个来源的理由：分别覆盖预印本、通用元数据、出版物登记、生物医学、计算机会议五类数据，接口都是免 key 的公开 HTTP API，符合计划书里「不引入需要海外支付或代理的服务」这条约束（三个新源在国内均可直连，必要时可走已有的本地代理）。
+选这六个来源的理由：分别覆盖预印本、通用元数据、出版物登记、生物医学、开放获取期刊五类数据，接口都是免 key 的公开 HTTP API，符合计划书里「不引入需要海外支付或代理的服务」这条约束（三个新源在国内均可直连，必要时可走已有的本地代理）。
+
+### 4.1.1 为什么第六个来源不是 DBLP
+
+初版方案里，计算机领域的会议论文由 DBLP 承担。实机验证时发现：DBLP 已启用反爬挑战（Anubis 工作量证明），程序化请求返回 `HTTP 202` 加挑战页，换浏览器 User-Agent 也一样，无法作为稳定来源接入。
+
+记录当时的验证结果：
+
+```
+GET https://dblp.org/search/publ/api?q=low-rank+adaptation&format=json&h=3
+-> 202, content-type: text/html, <title>Making sure you're not a bot!</title>
+GET https://doaj.org/api/search/articles/low-rank%20adaptation?pageSize=3
+-> 200, application/json, {"total": 680, ...}
+```
+
+计算机领域的覆盖因此由 Semantic Scholar（本身以计算机领域起家）与 Crossref（会议论文多有 DOI）共同承担，第六个来源改用 DOAJ，用于覆盖开放获取期刊这一维度。这条取舍在论文的「来源可用性」一节里可以作为论据使用：来源选择不只取决于覆盖范围，还取决于接口是否可稳定访问。
 
 ### 4.2 统一来源接口
 
@@ -117,7 +132,7 @@ class PaperSource(Protocol):
 SOURCE_REGISTRY = SourceRegistry({
     "arxiv": ArxivService(...), "s2": SemanticScholarService(...),
     "openalex": OpenAlexService(...), "crossref": CrossrefService(...),
-    "europepmc": EuropePmcService(...), "dblp": DblpService(...),
+    "europepmc": EuropePmcService(...), "doaj": DoajService(...),
 })
 ```
 
@@ -155,7 +170,7 @@ SOURCE_REGISTRY = SourceRegistry({
 | OpenAlex | 10 RPS（礼貌池） | 429/5xx 重试 3 次 |
 | Crossref | 礼貌池（建议 ≤5 RPS） | 失败单独记录，不影响其他源 |
 | Europe PMC | 建议 ≤3 RPS | 同上 |
-| DBLP | 建议 ≤1 RPS | 同上 |
+| DOAJ | 建议 ≤2 RPS | 同上 |
 
 编排层对每个来源设置独立超时（8s）与失败隔离：一个来源超时只影响该来源，聚合结果里标注 `failed_sources`，前端提示「Crossref 本次未返回」。
 
@@ -567,6 +582,25 @@ CREATE INDEX idx_edges_dst ON paper_edges(dst_paper_id, edge_type);
 | S7 | 测试、文档与实验：覆盖率、召回对比实验、来源分布统计 | 测试报告、实验数据、文档 | 3 天 | S6 |
 
 合计约 20 个工作日。与 `Plan.md` 的里程碑对照，S1–S7 安排在 M5 之后、M6（桌面打包）之前，占用 2027 年 1 月上旬到 2 月中旬；若时间紧，S2 可先接 Crossref 一个源，其余两个源后补。
+
+### 11.1 实施进展
+
+| 阶段 | 状态 | 说明 |
+|---|---|---|
+| S1 | 已完成 | 六张表建好；`PaperStore` 实现跨来源归一去重与合并；MySQL 与 SQLite 双库验证通过 |
+| S2 | 已完成 | 统一 `PaperSource` 契约 + `SourceRegistry`；新增 Crossref、Europe PMC、DOAJ 三个来源；六个来源实机验证全部返回结果 |
+| S3 | 已完成 | `SearchOrchestrator` 完成查询生成、多源并行、归一去重、四项加权打分与落库；`POST /api/search/run` 可用 |
+| S4–S7 | 计划中 | 主题管理、图谱接口、前端图谱页面、测试与实验 |
+
+一次真实检索的实测结果（关键词 `LoRA` + `医学影像`，2024–2026 年，每源 3 条）：
+
+```
+耗时 18.0s，命中 34 条，去重后 32 篇
+分来源：arxiv 3、openalex 9、crossref 6、europepmc 7、doaj 6、s2 3
+失败来源：s2（无 key 触发限流，不影响其他来源）
+```
+
+同一组关键词再检索一次后，两次检索共享 16 篇论文，且共享论文在 `papers` 表中只有一行——这就是「多检索知识图谱关联」的数据基础。
 
 ---
 

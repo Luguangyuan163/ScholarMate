@@ -11,7 +11,10 @@ import re
 
 DOI_PATTERN = re.compile(r"^10\.\d{4,9}/\S+$")
 DOI_PREFIX_PATTERN = re.compile(r"^(https?://(dx\.)?doi\.org/|doi:\s*)", re.IGNORECASE)
-ARXIV_ID_PATTERN = re.compile(r"(\d{4}\.\d{4,5})(v\d+)?")
+ARXIV_ID_PATTERN = re.compile(
+    r"(\d{4}\.\d{4,5})(v\d+)?"          # 新式：2401.12345v2
+    r"|([a-z-]+(?:\.[A-Za-z]{2})?/\d{7})"  # 旧式：math.GT/0309136
+)
 
 
 def normalize_doi(raw: str | None) -> str:
@@ -23,12 +26,13 @@ def normalize_doi(raw: str | None) -> str:
 
 
 def normalize_arxiv_id(raw: str | None) -> str:
-    """从 URL 或带版本号的写法里取出主版本 arXiv ID。"""
+    """从 URL 或带版本号的写法里取出主版本 arXiv ID；不是 arXiv 形态时返回空串。"""
     if not raw:
         return ""
-    value = str(raw).strip()
-    match = ARXIV_ID_PATTERN.search(value)
-    return match.group(1) if match else value.lower()
+    match = ARXIV_ID_PATTERN.search(str(raw).strip())
+    if match is None:
+        return ""
+    return match.group(1) or match.group(3) or ""
 
 
 def normalize_title(title: str | None) -> str:

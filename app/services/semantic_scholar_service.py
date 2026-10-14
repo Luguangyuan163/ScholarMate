@@ -23,6 +23,9 @@ def _is_rate_limited(exc: BaseException) -> bool:
 
 
 class SemanticScholarService:
+    name = "s2"
+    domains: tuple[str, ...] = ("general",)
+
     def __init__(
         self,
         client: httpx.AsyncClient | None = None,

@@ -25,6 +25,9 @@ def _is_transient(exc: BaseException) -> bool:
 
 
 class OpenAlexService:
+    name = "openalex"
+    domains: tuple[str, ...] = ("general",)
+
     def __init__(
         self,
         client: httpx.AsyncClient | None = None,

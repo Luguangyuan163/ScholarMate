@@ -25,6 +25,13 @@ def test_normalize_arxiv_id_removes_url_and_version():
     assert normalize_arxiv_id("") == ""
 
 
+def test_normalize_arxiv_id_rejects_non_arxiv_values():
+    """DOI 或 OpenAlex ID 不能被当成 arXiv ID，否则会被错误归类。"""
+    assert normalize_arxiv_id("10.1000/xyz") == ""
+    assert normalize_arxiv_id("W2741809807") == ""
+    assert normalize_arxiv_id("math.GT/0309136") == "math.GT/0309136"
+
+
 def test_normalize_title_ignores_case_punctuation_and_spacing():
     first = normalize_title("Low-Rank Adaptation,  of Large Language Models!")
     second = normalize_title("low rank adaptation of large language models")

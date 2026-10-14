@@ -19,7 +19,10 @@ from app.core.database import Database
 from app.core.llm_client import get_llm_client, get_translation_llm_client
 from app.models.uploaded_pdf import UploadedPDF
 from app.services.arxiv_service import ArxivService
+from app.services.crossref_service import CrossrefService
+from app.services.doaj_service import DoajService
 from app.services.embedding_service import EmbeddingService
+from app.services.europepmc_service import EuropePmcService
 from app.services.metadata_service import FallbackMetadataSource
 from app.services.openalex_service import OpenAlexService
 from app.services.pdf_service import PDFService
@@ -58,6 +61,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             )
         if not hasattr(app.state, "pdf_service"):
             app.state.pdf_service = PDFService()
+        if not hasattr(app.state, "crossref_service"):
+            app.state.crossref_service = CrossrefService(
+                mailto=settings.openalex_mailto
+            )
+        if not hasattr(app.state, "europepmc_service"):
+            app.state.europepmc_service = EuropePmcService()
+        if not hasattr(app.state, "doaj_service"):
+            app.state.doaj_service = DoajService()
         if not hasattr(app.state, "embedding_service"):
             app.state.embedding_service = EmbeddingService(
                 api_key=settings.dashscope_api_key, model=settings.embedding_model
