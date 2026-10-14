@@ -1,4 +1,4 @@
-"""数据库模块测试：建表与迁移（本地论文库只保留本地 PDF）。"""
+"""数据库模块测试：建表与迁移（旧链接论文表升级为论文实体表）。"""
 
 from __future__ import annotations
 
@@ -22,12 +22,13 @@ async def test_create_all_creates_uploaded_pdfs_table(tmp_path):
             ).all()
         }
     assert "uploaded_pdfs" in tables
-    assert "papers" not in tables
+    # v3.0 起 papers 是论文实体表（知识图谱的节点表），不再是旧的链接论文表
+    assert "papers" in tables
     await db.close()
 
 
-async def test_migration_drops_legacy_papers_table(tmp_path):
-    """旧版数据库中的链接论文表（papers）在升级时被移除。"""
+async def test_migration_replaces_legacy_papers_table(tmp_path):
+    """旧版链接论文表在升级时被新版论文实体表取代，旧数据不残留。"""
     url = f"sqlite+aiosqlite:///{(tmp_path / 'legacy.db').as_posix()}"
     db = Database(url)
     async with db.engine.begin() as conn:
@@ -67,5 +68,17 @@ async def test_migration_drops_legacy_papers_table(tmp_path):
                 )
             ).all()
         }
-    assert "papers" not in tables
+        columns = {
+            row[1]
+            for row in (await conn.execute(text("PRAGMA table_info(papers)"))).all()
+        }
+        remaining = (
+            await conn.execute(text("SELECT COUNT(*) FROM papers"))
+        ).scalar_one()
+
+    assert "papers" in tables
+    assert "normalized_title" in columns
+    assert "fingerprint" in columns
+    assert "external_id" not in columns
+    assert remaining == 0
     await db.close()

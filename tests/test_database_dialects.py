@@ -30,11 +30,12 @@ def test_sqlite_url_keeps_sqlite_setup(tmp_path):
     assert event.contains(db.engine.sync_engine, "connect", _enable_sqlite_pragmas)
 
 
-async def test_legacy_papers_table_is_removed(tmp_path):
-    """旧库里的链接论文表（无 normalized_title 列）应当被清理。"""
+async def test_legacy_papers_table_is_replaced(tmp_path):
+    """旧库里的链接论文表（无 normalized_title 列）应当被新版实体表取代。"""
     db_path = tmp_path / "legacy.db"
     raw = sqlite3.connect(db_path)
     raw.execute("CREATE TABLE papers (id INTEGER PRIMARY KEY, title TEXT, url TEXT)")
+    raw.execute("INSERT INTO papers (title, url) VALUES ('Old Link Paper', 'x')")
     raw.commit()
     raw.close()
 
@@ -43,9 +44,12 @@ async def test_legacy_papers_table_is_removed(tmp_path):
     await db.close()
 
     raw = sqlite3.connect(db_path)
-    tables = {row[0] for row in raw.execute("SELECT name FROM sqlite_master")}
+    columns = {row[1] for row in raw.execute("PRAGMA table_info(papers)")}
+    remaining = list(raw.execute("SELECT COUNT(*) FROM papers"))[0][0]
     raw.close()
-    assert "papers" not in tables
+    assert "normalized_title" in columns
+    assert "fingerprint" in columns
+    assert remaining == 0
 
 
 async def test_paper_entity_table_survives_create_all(tmp_path):
