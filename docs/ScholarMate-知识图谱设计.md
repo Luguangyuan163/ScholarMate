@@ -538,8 +538,13 @@ CREATE INDEX idx_edges_dst ON paper_edges(dst_paper_id, edge_type);
 | PATCH / DELETE | `/api/topics/{id}` | 修改 / 删除 |
 | POST | `/api/topics/{id}/merge` | 合并主题 |
 | POST / DELETE | `/api/topics/{id}/papers` | 批量增加 / 移除论文归属 |
-| POST | `/api/papers/{id}/classify` | 触发自动分类，返回候选主题 |
-| GET | `/api/papers` | 论文元数据列表（主题、年份、来源过滤，分页） |
+| GET | `/api/topics/{id}/papers` | 主题下的论文列表 |
+| POST | `/api/knowledge/papers/{id}/classify` | 按主题关键词规则给出候选主题 |
+| GET | `/api/knowledge/papers` | 论文实体列表（主题、年份、来源、标题过滤，分页） |
+| GET | `/api/knowledge/papers/{id}` | 论文实体详情（含所属主题） |
+
+> 路径说明：`/api/papers` 已经被本地 PDF 论文库占用（上传、批量删除、导入 PDF），
+> 因此知识库中的论文实体放在 `/api/knowledge/papers`，避免两套语义混在同一个前缀下。
 
 ---
 
@@ -590,7 +595,12 @@ CREATE INDEX idx_edges_dst ON paper_edges(dst_paper_id, edge_type);
 | S1 | 已完成 | 六张表建好；`PaperStore` 实现跨来源归一去重与合并；MySQL 与 SQLite 双库验证通过 |
 | S2 | 已完成 | 统一 `PaperSource` 契约 + `SourceRegistry`；新增 Crossref、Europe PMC、DOAJ 三个来源；六个来源实机验证全部返回结果 |
 | S3 | 已完成 | `SearchOrchestrator` 完成查询生成、多源并行、归一去重、四项加权打分与落库；`POST /api/search/run` 可用 |
-| S4–S7 | 计划中 | 主题管理、图谱接口、前端图谱页面、测试与实验 |
+| S4 | 已完成 | 主题 CRUD / 合并 / 论文归属；关键词规则分类与自动归类接入检索流程；`/api/topics`、`/api/knowledge/papers` 可用 |
+| S5–S7 | 计划中 | 图谱接口、前端图谱页面、测试与实验 |
+
+> S4 尚未接入的一项目标是模型建议归类（`assigned_by=llm`）。规则分类已能覆盖
+> 关键词命中场景，模型建议留待图谱接口完成后再补，避免在成本与准确性都未验证时
+> 就引入调用。
 
 一次真实检索的实测结果（关键词 `LoRA` + `医学影像`，2024–2026 年，每源 3 条）：
 
@@ -601,6 +611,13 @@ CREATE INDEX idx_edges_dst ON paper_edges(dst_paper_id, edge_type);
 ```
 
 同一组关键词再检索一次后，两次检索共享 16 篇论文，且共享论文在 `papers` 表中只有一行——这就是「多检索知识图谱关联」的数据基础。
+
+主题归类的实测结果（带 `topic_id` 的一次检索，关键词 `LoRA`）：
+
+```
+主题「我的毕设课题」：6 篇，assigned_by = user     （检索时显式指定）
+主题「大模型微调」  ：6 篇，assigned_by = keyword  （主题关键词 LoRA 命中，置信度 1.0）
+```
 
 ---
 

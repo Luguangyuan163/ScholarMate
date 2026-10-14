@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from pydantic import BaseModel, Field
 
+from app.schemas.topic import ClassifySuggestion
+
 
 class SearchRequest(BaseModel):
     query: str = Field(min_length=1, max_length=200)
@@ -40,6 +42,7 @@ class SearchRunRequest(BaseModel):
     year_from: int | None = Field(default=None, ge=1900, le=2100)
     year_to: int | None = Field(default=None, ge=1900, le=2100)
     per_source: int = Field(default=10, ge=1, le=50)
+    topic_id: int | None = Field(default=None, description="显式归入的主题，可空")
 
 
 class MergedPaperItem(BaseModel):
@@ -65,4 +68,5 @@ class SearchRunResponse(BaseModel):
     merged: int
     by_source: dict[str, int] = {}
     failed_sources: list[str] = []
+    assigned_topics: list[ClassifySuggestion] = []
     items: list[MergedPaperItem] = []

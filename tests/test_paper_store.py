@@ -73,6 +73,7 @@ async def test_same_doi_from_two_sources_merges_into_one_row(db):
 
 
 async def test_paper_without_doi_is_deduped_by_fingerprint(db):
+    """没有 DOI 时退回标题指纹去重。"""
     store = PaperStore(db)
     first = await store.upsert(
         PaperItem(
@@ -97,6 +98,33 @@ async def test_paper_without_doi_is_deduped_by_fingerprint(db):
     papers = await _all_papers(db)
     assert len(papers) == 1
     assert set(json.loads(papers[0].sources_json)) == {"crossref", "europepmc"}
+
+
+async def test_source_external_id_is_recognized_as_doi(db):
+    """Crossref / DOAJ 的 external_id 就是 DOI，必须作为主标识。"""
+    store = PaperStore(db)
+    paper = await store.upsert(
+        PaperItem(
+            title="A Crossref paper",
+            authors=["Smith, J."],
+            source="crossref",
+            external_id="10.1000/ABC.1",
+            year=2025,
+        )
+    )
+    assert paper.doi == "10.1000/abc.1"
+
+    merged = await store.upsert(
+        PaperItem(
+            title="A Crossref paper",
+            authors=["Smith, J."],
+            source="openalex",
+            external_id="W123",
+            year=2025,
+        ),
+        extra_ids={"doi": "10.1000/abc.1", "openalex_id": "W123"},
+    )
+    assert merged.id == paper.id
 
 
 async def test_same_paper_in_two_sessions_reuses_one_node(db):

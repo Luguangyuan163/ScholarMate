@@ -22,6 +22,7 @@ from app.services.search_orchestrator import (
     normalize_keywords,
     rank_candidates,
 )
+from app.services.topic_service import TopicStore
 
 
 class StubSource:
@@ -184,6 +185,7 @@ async def test_run_persists_session_papers_and_links(tmp_path):
 
 
 async def test_run_reports_failing_source_without_breaking_others(tmp_path):
+    """单个来源失败不影响其他来源，失败名单会返回给前端。"""
     import httpx
 
     healthy = StubSource("arxiv", [_item("Fine", "arxiv", doi="10.1000/ok")])
@@ -193,6 +195,38 @@ async def test_run_reports_failing_source_without_breaking_others(tmp_path):
 
     assert response.failed_sources == ["crossref"]
     assert response.merged == 1
+    await db.close()
+
+
+async def test_run_assigns_explicit_topic_and_keyword_matches(tmp_path):
+    db = Database(f"sqlite+aiosqlite:///{(tmp_path / 'topic_run.db').as_posix()}")
+    await db.create_all()
+    topics = TopicStore(db)
+    explicit = await topics.create("我的课题")
+    auto = await topics.create("大模型微调", keywords=["LoRA"])
+    arxiv = StubSource(
+        "arxiv",
+        [
+            _item("LoRA paper one", "arxiv", doi="10.1000/one"),
+            _item("LoRA paper two", "arxiv", doi="10.1000/two"),
+        ],
+    )
+    orchestrator = SearchOrchestrator(
+        registry=SourceRegistry([arxiv]),
+        store=PaperStore(db),
+        db=db,
+        topic_store=topics,
+    )
+
+    response = await orchestrator.run(
+        SearchRunRequest(keywords=["LoRA"], sources=["all"], per_source=5, topic_id=explicit.id)
+    )
+
+    assert [(topic.topic_id, topic.name) for topic in response.assigned_topics] == [
+        (auto.id, "大模型微调")
+    ]
+    counts = {summary.name: summary.paper_count for summary in await topics.list_topics()}
+    assert counts == {"我的课题": 2, "大模型微调": 2}
     await db.close()
 
 

@@ -8,11 +8,11 @@ from __future__ import annotations
 
 import json
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import Database
-from app.models.paper import Paper, SearchSessionPaper
+from app.models.paper import Paper, PaperTopic, SearchSessionPaper
 from app.schemas.search import PaperItem
 from app.services.paper_identity import (
     normalize_arxiv_id,
@@ -77,15 +77,60 @@ class PaperStore:
                 link.matched_keywords_json = payload
             await session.commit()
 
+    async def list_papers(
+        self,
+        *,
+        topic_id: int | None = None,
+        year_from: int | None = None,
+        year_to: int | None = None,
+        source: str | None = None,
+        query: str | None = None,
+        limit: int = 50,
+        offset: int = 0,
+    ) -> tuple[int, list[Paper]]:
+        """按主题、年份、来源、标题关键字分页查询论文实体。"""
+        conditions = _paper_conditions(year_from, year_to, source, query)
+        base = select(Paper)
+        if topic_id is not None:
+            base = base.join(PaperTopic, PaperTopic.paper_id == Paper.id).where(
+                PaperTopic.topic_id == topic_id
+            )
+        async with self._db.session_factory() as session:
+            total = (
+                await session.execute(
+                    select(func.count()).select_from(
+                        base.where(*conditions).subquery()
+                    )
+                )
+            ).scalar_one()
+            statement = (
+                base.where(*conditions)
+                .order_by(Paper.citation_count.desc(), Paper.id.desc())
+                .limit(limit)
+                .offset(offset)
+            )
+            rows = list((await session.execute(statement)).scalars().all())
+        return int(total), rows
+
+    async def get_paper(self, paper_id: int) -> Paper | None:
+        async with self._db.session_factory() as session:
+            return await session.get(Paper, paper_id)
+
 
 def derive_identifiers(
     item: PaperItem,
     extra_ids: dict[str, str] | None = None,
 ) -> dict[str, str]:
-    """汇总论文的各路标识；DOI 允许从 URL 里再取一次。"""
+    """汇总论文的各路标识。
+
+    DOI 有三个来源：调用方显式传入、来源自带的 external_id（Crossref / DOAJ
+    等来源的 external_id 就是 DOI）、URL。三处都按 DOI 形态校验，不会误判。
+    """
     provided = extra_ids or {}
     return {
-        "doi": normalize_doi(provided.get("doi")) or normalize_doi(item.url),
+        "doi": normalize_doi(provided.get("doi"))
+        or normalize_doi(item.external_id)
+        or normalize_doi(item.url),
         "arxiv_id": normalize_arxiv_id(provided.get("arxiv_id"))
         or _source_external_id(item, "arxiv"),
         "s2_id": provided.get("s2_id", "") or _source_external_id(item, "s2"),
@@ -178,3 +223,22 @@ def _json_list(raw: str | None) -> list[str]:
     except json.JSONDecodeError:
         return []
     return [str(item) for item in parsed] if isinstance(parsed, list) else []
+
+
+def _paper_conditions(
+    year_from: int | None,
+    year_to: int | None,
+    source: str | None,
+    query: str | None,
+) -> list:
+    """构造过滤条件；来源在 JSON 列里按子串匹配，SQLite 与 MySQL 通用。"""
+    conditions = []
+    if year_from is not None:
+        conditions.append(Paper.year >= year_from)
+    if year_to is not None:
+        conditions.append(Paper.year <= year_to)
+    if source:
+        conditions.append(Paper.sources_json.like(f'%"{source}"%'))
+    if query:
+        conditions.append(Paper.title.like(f"%{query}%"))
+    return conditions

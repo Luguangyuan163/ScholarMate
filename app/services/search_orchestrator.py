@@ -20,9 +20,11 @@ from app.schemas.search import (
     SearchRunRequest,
     SearchRunResponse,
 )
+from app.schemas.topic import ClassifySuggestion
 from app.services.paper_identity import title_fingerprint
 from app.services.paper_source import SourceRegistry
 from app.services.paper_store import IDENTITY_COLUMNS, PaperStore, derive_identifiers
+from app.services.topic_service import TopicStore
 
 MAX_QUERIES = 8
 CITATION_NORM_CAP = 1000.0
@@ -52,10 +54,12 @@ class SearchOrchestrator:
         registry: SourceRegistry,
         store: PaperStore,
         db: Database,
+        topic_store: TopicStore | None = None,
     ) -> None:
         self._registry = registry
         self._store = store
         self._db = db
+        self._topics = topic_store or TopicStore(db)
 
     async def run(self, request: SearchRunRequest) -> SearchRunResponse:
         keywords = normalize_keywords(request.keywords)
@@ -85,14 +89,39 @@ class SearchOrchestrator:
         ranked = rank_candidates(candidates, keywords)
         session_id = await self._persist(request, ranked, failed)
         items = await self._attach_papers(session_id, ranked)
+        assigned = await self._classify(keywords, request.topic_id, items)
         return SearchRunResponse(
             session_id=session_id,
             total=sum(by_source.values()),
             merged=len(items),
             by_source=by_source,
             failed_sources=failed,
+            assigned_topics=assigned,
             items=items,
         )
+
+    async def _classify(
+        self,
+        keywords: list[str],
+        topic_id: int | None,
+        items: list[MergedPaperItem],
+    ) -> list[ClassifySuggestion]:
+        """先按显式指定归入主题，再按关键词规则自动归类。"""
+        paper_ids = [item.paper_id for item in items]
+        if not paper_ids:
+            return []
+        if topic_id is not None:
+            await self._topics.assign_papers(topic_id, paper_ids)
+        matches = await self._topics.auto_assign(keywords, paper_ids)
+        return [
+            ClassifySuggestion(
+                topic_id=match.topic_id,
+                name=match.name,
+                matched_keywords=match.matched_keywords,
+                confidence=match.confidence,
+            )
+            for match in matches
+        ]
 
     async def _persist(
         self,
