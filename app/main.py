@@ -13,7 +13,17 @@ from fastapi.templating import Jinja2Templates
 from sqlalchemy import select
 
 import app.models  # noqa: F401  确保 ORM 模型注册到 Base.metadata
-from app.api import agent, conversations, knowledge, papers, pdf, search, topics, translations
+from app.api import (
+    agent,
+    conversations,
+    graph,
+    knowledge,
+    papers,
+    pdf,
+    search,
+    topics,
+    translations,
+)
 from app.config import Settings
 from app.core.database import Database
 from app.core.llm_client import get_llm_client, get_translation_llm_client
@@ -135,4 +145,5 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(translations.router)
     app.include_router(topics.router)
     app.include_router(knowledge.router)
+    app.include_router(graph.router)
     return app

@@ -596,7 +596,8 @@ CREATE INDEX idx_edges_dst ON paper_edges(dst_paper_id, edge_type);
 | S2 | 已完成 | 统一 `PaperSource` 契约 + `SourceRegistry`；新增 Crossref、Europe PMC、DOAJ 三个来源；六个来源实机验证全部返回结果 |
 | S3 | 已完成 | `SearchOrchestrator` 完成查询生成、多源并行、归一去重、四项加权打分与落库；`POST /api/search/run` 可用 |
 | S4 | 已完成 | 主题 CRUD / 合并 / 论文归属；关键词规则分类与自动归类接入检索流程；`/api/topics`、`/api/knowledge/papers` 可用 |
-| S5–S7 | 计划中 | 图谱接口、前端图谱页面、测试与实验 |
+| S5 | 已完成 | 单次检索图谱（会话 / 论文 / 关键词 / 主题）、历史综合图谱（过滤 + 截断统计）、按需引用扩展（OpenAlex，幂等）；`/api/graph/*` 可用 |
+| S6–S7 | 计划中 | 前端图谱页面（Cytoscape.js）、测试与实验 |
 
 > S4 尚未接入的一项目标是模型建议归类（`assigned_by=llm`）。规则分类已能覆盖
 > 关键词命中场景，模型建议留待图谱接口完成后再补，避免在成本与准确性都未验证时
@@ -618,6 +619,20 @@ CREATE INDEX idx_edges_dst ON paper_edges(dst_paper_id, edge_type);
 主题「我的毕设课题」：6 篇，assigned_by = user     （检索时显式指定）
 主题「大模型微调」  ：6 篇，assigned_by = keyword  （主题关键词 LoRA 命中，置信度 1.0）
 ```
+
+图谱接口的实测结果（MySQL 中积累 32 篇论文、2 个主题之后）：
+
+```
+单次检索图谱：10 个节点（1 会话 + 6 论文 + 1 关键词 + 2 主题）、24 条边
+              （6 in_session + 6 matches + 12 belongs_to）
+历史综合图谱：32 篇论文 + 2 个主题，12 条归属边
+按需扩展：论文 11 → OpenAlex W4403753254，3.4s 拉回 20 篇参考文献、新增 20 条 cites 边
+重复扩展：related_papers=20、added_edges=0（幂等，不重复建边）
+```
+
+当前图谱边类型中，`similar`（摘要向量相似度）尚未实现。它需要在检索时对同批论文批量
+计算 embedding，属于成本较高的一步，留到前端图谱页面完成后再补，避免在没有可视化验证
+的情况下先付出调用成本。
 
 ---
 

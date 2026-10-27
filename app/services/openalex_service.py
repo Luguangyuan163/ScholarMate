@@ -68,6 +68,48 @@ class OpenAlexService:
         )
         return _normalize_detail(response.json())
 
+    async def get_referenced_works(
+        self, work_id: str, limit: int = 20
+    ) -> list[PaperItem]:
+        """取该工作引用的文献：先读 referenced_works，再按 ID 批量拉元数据。"""
+        params = {"mailto": self._mailto} if self._mailto else {}
+        detail = await self._get(
+            f"{OPENALEX_WORKS_URL}/{quote(work_id, safe='')}", params=params
+        )
+        references = detail.json().get("referenced_works") or []
+        ids = [str(reference).rsplit("/", 1)[-1] for reference in references][:limit]
+        if not ids:
+            return []
+        batch = {
+            "filter": "openalex_id:" + "|".join(ids),
+            "per-page": min(len(ids), 50),
+        }
+        if self._mailto:
+            batch["mailto"] = self._mailto
+        response = await self._get(OPENALEX_WORKS_URL, params=batch)
+        return _parse_openalex_response(response.json())
+
+    async def get_citing_works(self, work_id: str, limit: int = 20) -> list[PaperItem]:
+        """取引用了该工作的文献。"""
+        params: dict = {"filter": f"cites:{work_id}", "per-page": limit}
+        if self._mailto:
+            params["mailto"] = self._mailto
+        response = await self._get(OPENALEX_WORKS_URL, params=params)
+        return _parse_openalex_response(response.json())
+
+    async def find_work_id(self, doi: str) -> str:
+        """按 DOI 反查 OpenAlex Work ID，供缺少 openalex_id 的论文扩展用。"""
+        if not doi:
+            return ""
+        params: dict = {"filter": f"doi:{doi}", "per-page": 1}
+        if self._mailto:
+            params["mailto"] = self._mailto
+        response = await self._get(OPENALEX_WORKS_URL, params=params)
+        results = response.json().get("results") or []
+        if not results:
+            return ""
+        return str(results[0].get("id", "")).rsplit("/", 1)[-1]
+
     @retry(
         retry=retry_if_exception(_is_transient),
         stop=stop_after_attempt(3),
