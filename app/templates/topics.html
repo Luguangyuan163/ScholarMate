@@ -1,0 +1,89 @@
+{% extends "base.html" %}
+{% block title %}主题管理 - {{ app_title }}{% endblock %}
+{% block content %}
+<section class="topics-page" x-data="topicsApp()" x-init="init()">
+  <header class="topics-head">
+    <div class="graph-head-title">
+      <span class="graph-seal small">題</span>
+      <div>
+        <h2>论文主题</h2>
+        <p class="hint">主题是论文的分类单元，也决定图谱中的分组与着色。</p>
+      </div>
+    </div>
+    <button class="btn" type="button" @click="toggleCreate()">＋ 新建主题</button>
+  </header>
+
+  <form class="topic-form" x-show="creating" x-transition.opacity.duration.150ms @submit.prevent="createTopic()">
+    <div class="topic-form-grid">
+      <label>名称<input type="text" x-model="form.name" required maxlength="191" placeholder="例如：大模型微调"></label>
+      <label>颜色<input type="color" x-model="form.color"></label>
+      <label class="wide">关键词（逗号分隔）<input type="text" x-model="form.keywordsText" placeholder="LoRA, 低秩适配"></label>
+      <label class="wide">描述<textarea x-model="form.description" rows="2" placeholder="这个主题收什么论文"></textarea></label>
+    </div>
+    <div class="topic-form-actions">
+      <button class="btn btn-sm" type="submit">保存</button>
+      <button class="btn btn-sm btn-outline" type="button" @click="creating = false">取消</button>
+      <span class="form-error" x-show="error" x-text="error"></span>
+    </div>
+  </form>
+
+  <div class="topic-grid">
+    <template x-for="t in topics" :key="t.id">
+      <article class="topic-card" :style="'--topic-color:' + (t.color || '#1f3a5f')">
+        <div class="topic-card-top">
+          <span class="topic-seal" x-text="t.name.slice(0, 1)"></span>
+          <h3 x-text="t.name"></h3>
+          <span class="topic-count mono" x-text="t.paper_count + ' 篇'"></span>
+        </div>
+        <p class="topic-desc" x-text="t.description || '未填写描述'"></p>
+        <div class="topic-keywords">
+          <template x-for="keyword in t.keywords" :key="keyword">
+            <span class="keyword-chip" x-text="keyword"></span>
+          </template>
+          <span class="keyword-empty" x-show="!t.keywords.length">未设置关键词</span>
+        </div>
+        <div class="topic-card-actions">
+          <button class="btn btn-sm btn-outline" type="button" @click="togglePapers(t)">论文</button>
+          <button class="btn btn-sm btn-outline" type="button" @click="startEdit(t)">编辑</button>
+          <button class="btn btn-sm btn-danger" type="button" @click="removeTopic(t)">删除</button>
+        </div>
+
+        <form class="topic-edit" x-show="editingId === t.id" @submit.prevent="saveEdit(t)">
+          <label>名称<input type="text" x-model="edit.name" required maxlength="191"></label>
+          <label>关键词<input type="text" x-model="edit.keywordsText" placeholder="逗号分隔"></label>
+          <label>描述<textarea x-model="edit.description" rows="2"></textarea></label>
+          <div class="topic-edit-row">
+            <label class="topic-color-label">颜色<input type="color" x-model="edit.color"></label>
+            <button class="btn btn-sm" type="submit">保存修改</button>
+            <button class="btn btn-sm btn-outline" type="button" @click="editingId = null">取消</button>
+          </div>
+          <div class="topic-merge">
+            <select x-model="mergeTarget">
+              <option value="">并入其他主题…</option>
+              <template x-for="other in topics.filter((item) => item.id !== t.id)" :key="other.id">
+                <option :value="String(other.id)" x-text="other.name"></option>
+              </template>
+            </select>
+            <button class="btn btn-sm btn-danger" type="button" @click="mergeTopic(t)">合并并归档</button>
+          </div>
+        </form>
+
+        <div class="topic-papers" x-show="papersTopicId === t.id">
+          <template x-for="paper in topicPapers" :key="paper.id">
+            <a class="topic-paper" :href="'/api/knowledge/papers/' + paper.id" target="_blank" rel="noopener">
+              <span class="mono topic-paper-year" x-text="paper.year || '—'"></span>
+              <span class="topic-paper-title" x-text="paper.title"></span>
+              <span class="mono topic-paper-cites" x-text="paper.citation_count"></span>
+            </a>
+          </template>
+          <p class="hint" x-show="!topicPapers.length">该主题下暂无论文。</p>
+        </div>
+      </article>
+    </template>
+  </div>
+  <p class="hint" x-show="!topics.length && !loading">还没有主题。点击右上角「新建主题」，或在检索时直接归入新主题。</p>
+</section>
+{% endblock %}
+{% block scripts %}
+<script src="/static/js/topics.js"></script>
+{% endblock %}

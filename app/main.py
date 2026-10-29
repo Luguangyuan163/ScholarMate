@@ -137,6 +137,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     async def papers_page(request: Request) -> HTMLResponse:
         return templates.TemplateResponse(request, "papers.html", {"app_title": settings.app_title})
 
+    @app.get("/graph", response_class=HTMLResponse)
+    async def graph_page(request: Request) -> HTMLResponse:
+        return templates.TemplateResponse(request, "graph.html", {"app_title": settings.app_title})
+
+    @app.get("/topics", response_class=HTMLResponse)
+    async def topics_page(request: Request) -> HTMLResponse:
+        return templates.TemplateResponse(request, "topics.html", {"app_title": settings.app_title})
+
     app.include_router(search.router)
     app.include_router(agent.router)
     app.include_router(conversations.router)

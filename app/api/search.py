@@ -2,13 +2,16 @@
 
 from __future__ import annotations
 
+import json
 from typing import Annotated
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import HTMLResponse, Response
+from sqlalchemy import select
 from starlette.concurrency import run_in_threadpool
 
+from app.models.paper import SearchSession
 from app.schemas.search import (
     PaperItem,
     SearchRequest,
@@ -31,6 +34,34 @@ async def list_sources(request: Request) -> dict:
     """可用检索来源清单，供前端勾选。"""
     registry = _registry_for(request)
     return {"sources": registry.names(), "all": "all"}
+
+
+@router.get("/sessions")
+async def list_search_sessions(request: Request, limit: int = 20) -> list[dict]:
+    """历史检索列表，供图谱页选择「本次检索」。"""
+    database = request.app.state.database
+    async with database.session_factory() as session:
+        rows = (
+            (
+                await session.execute(
+                    select(SearchSession)
+                    .order_by(SearchSession.id.desc())
+                    .limit(max(1, min(limit, 100)))
+                )
+            )
+            .scalars()
+            .all()
+        )
+    return [
+        {
+            "id": row.id,
+            "keywords": json.loads(row.keywords_json or "[]"),
+            "result_count": row.result_count,
+            "failed_sources": json.loads(row.failed_sources or "[]"),
+            "created_at": row.created_at.isoformat() if row.created_at else None,
+        }
+        for row in rows
+    ]
 
 
 @router.post("/run")

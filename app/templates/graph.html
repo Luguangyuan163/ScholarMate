@@ -1,0 +1,151 @@
+{% extends "base.html" %}
+{% block title %}知识图谱 - {{ app_title }}{% endblock %}
+{% block content %}
+<section class="graph-page" x-data="graphApp()" x-init="init()">
+  <header class="graph-head">
+    <div class="graph-head-title">
+      <span class="graph-seal">圖</span>
+      <div>
+        <h2>论文知识图谱</h2>
+        <p class="hint" x-text="subtitle()"></p>
+      </div>
+    </div>
+    <div class="graph-head-actions">
+      <div class="mode-switch">
+        <button type="button" :class="{ active: mode === 'session' }" @click="setMode('session')">本次检索</button>
+        <button type="button" :class="{ active: mode === 'global' }" @click="setMode('global')">历史综合</button>
+      </div>
+      <button class="btn btn-sm btn-outline" type="button" @click="reload()" :disabled="loading">重新取图</button>
+    </div>
+  </header>
+
+  <div class="graph-stage">
+    <aside class="graph-rail">
+      <div class="rail-heading">图谱范围</div>
+      <label class="graph-field" x-show="mode === 'session'">
+        <span>检索会话</span>
+        <select x-model.number="sessionId" @change="reload()">
+          <template x-for="s in sessions" :key="s.id">
+            <option :value="s.id" x-text="sessionLabel(s)"></option>
+          </template>
+        </select>
+      </label>
+
+      <div x-show="mode === 'global'">
+        <div class="rail-heading">过滤</div>
+        <label class="graph-field">
+          <span>主题</span>
+          <select x-model="topicId" @change="reload()">
+            <option value="">全部主题</option>
+            <template x-for="t in topics" :key="t.id">
+              <option :value="String(t.id)" x-text="t.name + '（' + t.paper_count + '）'"></option>
+            </template>
+          </select>
+        </label>
+        <div class="graph-field-pair">
+          <label class="graph-field">
+            <span>起始年</span>
+            <input type="number" x-model="yearFrom" placeholder="2020" @change="reload()">
+          </label>
+          <label class="graph-field">
+            <span>截止年</span>
+            <input type="number" x-model="yearTo" placeholder="2026" @change="reload()">
+          </label>
+        </div>
+        <label class="graph-field">
+          <span>来源</span>
+          <select x-model="source" @change="reload()">
+            <option value="">全部来源</option>
+            <option value="arxiv">arXiv</option>
+            <option value="s2">Semantic Scholar</option>
+            <option value="openalex">OpenAlex</option>
+            <option value="crossref">Crossref</option>
+            <option value="europepmc">Europe PMC</option>
+            <option value="doaj">DOAJ</option>
+          </select>
+        </label>
+        <label class="graph-field">
+          <span>最低引用</span>
+          <input type="number" min="0" x-model.number="minCitations" @change="reload()">
+        </label>
+      </div>
+
+      <div class="rail-heading">画法</div>
+      <label class="graph-field">
+        <span>布局</span>
+        <select x-model="layoutName" @change="runLayout()">
+          <option value="cose">力导向</option>
+          <option value="concentric">同心（按度数）</option>
+          <option value="breadthfirst">层次</option>
+          <option value="grid">网格</option>
+        </select>
+      </label>
+
+      <div class="graph-legend">
+        <div class="legend-row"><i class="legend-dot paper"></i><span>论文</span></div>
+        <div class="legend-row"><i class="legend-dot topic"></i><span>主题</span></div>
+        <div class="legend-row"><i class="legend-dot keyword"></i><span>关键词</span></div>
+        <div class="legend-row"><i class="legend-line cites"></i><span>引用</span></div>
+        <div class="legend-row"><i class="legend-line belongs"></i><span>归属</span></div>
+        <div class="legend-row"><i class="legend-line matches"></i><span>命中</span></div>
+      </div>
+    </aside>
+
+    <div class="graph-canvas-wrap">
+      <div class="graph-canvas" id="cy" x-ref="canvas"></div>
+      <div class="graph-overlay" x-show="loading">
+        <span class="spinner"></span>
+        <span>正在展卷……</span>
+      </div>
+      <div class="graph-overlay graph-overlay-empty" x-show="!loading && !nodeCount">
+        <p>尚无图谱数据。</p>
+        <p class="hint">先去<a href="/search">论文检索</a>跑一次检索，或检查当前过滤条件。</p>
+      </div>
+      <div class="graph-stats mono" x-text="statsText()"></div>
+      <div class="graph-toast" x-show="toast" x-text="toast" @click="toast = ''"></div>
+    </div>
+
+    <aside class="graph-notes" x-show="selected" x-transition.opacity.duration.200ms>
+      <div class="notes-head">
+        <span class="notes-type" x-text="typeLabel(selected && selected.type)"></span>
+        <button class="notes-close" type="button" @click="closeDetail()" title="关闭">×</button>
+      </div>
+      <h3 class="notes-title" x-text="selected && selected.label"></h3>
+      <dl class="notes-meta">
+        <template x-if="selected && selected.meta && selected.meta.year">
+          <div><dt>年份</dt><dd x-text="selected.meta.year"></dd></div>
+        </template>
+        <template x-if="selected && selected.meta && selected.meta.citations !== undefined">
+          <div><dt>被引</dt><dd x-text="selected.meta.citations"></dd></div>
+        </template>
+        <template x-if="selected && selected.meta && selected.meta.sources && selected.meta.sources.length">
+          <div><dt>来源</dt><dd x-text="selected.meta.sources.join(' / ')"></dd></div>
+        </template>
+        <template x-if="selected && selected.meta && selected.meta.doi">
+          <div><dt>DOI</dt><dd class="mono notes-doi" x-text="selected.meta.doi"></dd></div>
+        </template>
+      </dl>
+      <div class="notes-actions" x-show="selected && selected.type === 'paper'">
+        <button class="btn btn-sm" type="button" @click="expandSelected()" :disabled="expanding"
+                x-text="expanding ? '取引中…' : '扩展引用'"></button>
+        <a class="btn btn-sm btn-outline" target="_blank" rel="noopener"
+           :href="(selected && (selected.meta.pdf_url || selected.meta.url)) || '#'"
+           x-show="selected && (selected.meta.pdf_url || selected.meta.url)">打开原文</a>
+      </div>
+      <div class="notes-links" x-show="selectedLinks.length">
+        <h4>关联节点</h4>
+        <template x-for="link in selectedLinks" :key="link.id">
+          <button class="notes-link" type="button" @click="focusNode(link.id)">
+            <span class="notes-link-type" x-text="typeLabel(link.type)"></span>
+            <span x-text="link.label"></span>
+          </button>
+        </template>
+      </div>
+    </aside>
+  </div>
+</section>
+{% endblock %}
+{% block scripts %}
+<script src="/static/vendor/cytoscape.min.js"></script>
+<script src="/static/js/graph.js"></script>
+{% endblock %}
